@@ -36,9 +36,9 @@ const emptySettings: AdminSettings = {
             systemPrompt: "",
             allowCustomChannel: true,
         },
-        auth: { allowRegister: true, linuxDo: { enabled: false } },
+        auth: { allowRegister: true, passwordLogin: { enabled: true }, linuxDo: { enabled: false }, oidc: { enabled: false, name: "Logto" } },
     },
-    private: { channels: [], promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
+    private: { channels: [], promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" }, oidc: { issuer: "", internalIssuer: "", clientId: "", clientSecret: "", scope: "openid profile email" } } },
 };
 const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "" };
 
@@ -454,6 +454,11 @@ export default function AdminSettingsPage() {
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
+                                        <Form.Item name={["public", "auth", "passwordLogin", "enabled"]} label="显示账号密码登录" extra="只影响前端登录页显示；关闭后隐藏账号密码和注册表单，不影响后端注册能力或 OIDC 首次登录创建用户" valuePropName="checked">
+                                            <Switch />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col span={24}>
                                         <Typography.Title level={5}>模型算力点</Typography.Title>
                                         <Table
                                             rowKey="model"
@@ -529,6 +534,53 @@ export default function AdminSettingsPage() {
                                             <Col xs={24} md={9}>
                                                 <Form.Item name={["private", "auth", "linuxDo", "clientSecret"]} label="Linux.do Client Secret">
                                                     <Input.Password placeholder="留空则沿用已保存的密钥" />
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                    </Flex>
+                                </Card>
+                                <Card size="small" title="Logto / OIDC 登录">
+                                    <Flex vertical gap={14}>
+                                        <Typography.Text type="secondary">
+                                            按标准 OIDC Authorization Code Flow 接入；Logto 应用回调地址填写 /api/auth/oidc/callback，请在 Logto 控制台自行拼接站点前缀。
+                                            <Typography.Link href="https://cloud.logto.io" target="_blank" rel="noreferrer">
+                                                点击此处管理 Logto 应用
+                                            </Typography.Link>
+                                        </Typography.Text>
+                                        <Row gutter={16}>
+                                            <Col xs={24} md={6}>
+                                                <Form.Item name={["public", "auth", "oidc", "enabled"]} label="开启 OIDC 登录" valuePropName="checked">
+                                                    <Switch />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={6}>
+                                                <Form.Item name={["public", "auth", "oidc", "name"]} label="登录按钮名称">
+                                                    <Input placeholder="Logto" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={12}>
+                                                <Form.Item name={["private", "auth", "oidc", "issuer"]} label="OIDC Issuer" extra="例如：https://your-tenant.logto.app/oidc">
+                                                    <Input placeholder="https://your-tenant.logto.app/oidc" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={12}>
+                                                <Form.Item name={["private", "auth", "oidc", "internalIssuer"]} label="后端内部 Issuer" extra="可选；Docker 本地测试时用于后端容器访问 Logto，例如：http://app:3001/oidc">
+                                                    <Input placeholder="留空则使用 OIDC Issuer" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={8}>
+                                                <Form.Item name={["private", "auth", "oidc", "clientId"]} label="OIDC Client ID">
+                                                    <Input placeholder="输入 Logto 应用 Client ID" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={8}>
+                                                <Form.Item name={["private", "auth", "oidc", "clientSecret"]} label="OIDC Client Secret">
+                                                    <Input.Password placeholder="留空则沿用已保存的密钥" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={8}>
+                                                <Form.Item name={["private", "auth", "oidc", "scope"]} label="Scope">
+                                                    <Input placeholder="openid profile email" />
                                                 </Form.Item>
                                             </Col>
                                         </Row>
@@ -842,8 +894,15 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
         },
         auth: {
             allowRegister: setting.auth?.allowRegister !== false,
+            passwordLogin: {
+                enabled: setting.auth?.passwordLogin?.enabled !== false,
+            },
             linuxDo: {
                 enabled: setting.auth?.linuxDo?.enabled === true,
+            },
+            oidc: {
+                enabled: setting.auth?.oidc?.enabled === true,
+                name: setting.auth?.oidc?.name || "Logto",
             },
         },
     };
@@ -864,6 +923,13 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             linuxDo: {
                 clientId: setting.auth?.linuxDo?.clientId || "",
                 clientSecret: setting.auth?.linuxDo?.clientSecret || "",
+            },
+            oidc: {
+                issuer: setting.auth?.oidc?.issuer || "",
+                internalIssuer: setting.auth?.oidc?.internalIssuer || "",
+                clientId: setting.auth?.oidc?.clientId || "",
+                clientSecret: setting.auth?.oidc?.clientSecret || "",
+                scope: setting.auth?.oidc?.scope || "openid profile email",
             },
         },
     };

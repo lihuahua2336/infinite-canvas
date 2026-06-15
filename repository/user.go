@@ -18,7 +18,7 @@ func ListUsers(q model.Query) ([]model.User, int64, error) {
 	tx := db.Model(&model.User{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ? OR linux_do_id LIKE ?", like, like, like, like)
+		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ? OR linux_do_id LIKE ? OR oidc_subject LIKE ?", like, like, like, like, like)
 	}
 
 	var total int64
@@ -172,6 +172,15 @@ func GetUserByLinuxDoID(id string) (model.User, bool, error) {
 		return model.User{}, false, err
 	}
 	return findUser(db, "linux_do_id = ?", id)
+}
+
+// GetUserByOIDCSubject 根据 OIDC Issuer 和 Subject 查询用户。
+func GetUserByOIDCSubject(issuer string, subject string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	return findUser(db, "oidc_issuer = ? AND oidc_subject = ?", issuer, subject)
 }
 
 // findUser 查询单个用户，并将未命中转换为 ok=false。

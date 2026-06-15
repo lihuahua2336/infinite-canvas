@@ -30,6 +30,8 @@ type User struct {
 	InviterID   string     `json:"inviterId"`
 	GithubID    string     `json:"githubId"`
 	LinuxDoID   string     `json:"linuxDoId" gorm:"index"`
+	OIDCIssuer  string     `json:"oidcIssuer" gorm:"column:oidc_issuer;index"`
+	OIDCSubject string     `json:"oidcSubject" gorm:"column:oidc_subject;index"`
 	WechatID    string     `json:"wechatId"`
 	Status      UserStatus `json:"status"`
 	LastLoginAt string     `json:"lastLoginAt"`

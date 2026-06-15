@@ -46,10 +46,12 @@ description: 当前后端主要数据表与字段说明
 | `inviter_id` | string | 邀请人用户 ID |
 | `github_id` | string | GitHub 用户 ID |
 | `linux_do_id` | string | Linux.do 用户 ID |
+| `oidc_issuer` | string | OIDC Issuer |
+| `oidc_subject` | string | OIDC Subject |
 | `wechat_id` | string | 微信用户 ID |
 | `status` | string | 用户状态：`active`、`ban` |
 | `last_login_at` | string | 最近登录时间 |
-| `extra` | json | 扩展信息，第三方资料按平台命名空间保存，如 `linuxDo` |
+| `extra` | json | 扩展信息，第三方资料按平台命名空间保存，如 `linuxDo`、`oidc` |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
@@ -138,6 +140,19 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `enabled` | bool | 是否开启 Linux.do 登录 |
 
+`auth.passwordLogin` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否在前端登录页显示账号密码和注册表单，默认显示；仅影响前端展示，不关闭后端注册能力或 OIDC 首次登录创建用户 |
+
+`auth.oidc` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否开启通用 OIDC 登录，可用于接入 Logto |
+| `name` | string | OIDC 登录按钮展示名称，默认 `Logto` |
+
 `private.value` 当前字段：
 
 | 字段 | 类型 | 说明 |
@@ -172,6 +187,16 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `clientId` | string | Linux.do OAuth App Client ID |
 | `clientSecret` | string | Linux.do OAuth App Client Secret，后台返回时隐藏 |
+
+`auth.oidc` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `issuer` | string | OIDC Issuer，例如 Logto 的 `https://your-tenant.logto.app/oidc` |
+| `internalIssuer` | string | 可选；后端容器访问 OIDC Provider 的内部地址，留空则使用 `issuer` |
+| `clientId` | string | OIDC Client ID |
+| `clientSecret` | string | OIDC Client Secret，后台返回时隐藏 |
+| `scope` | string | OIDC scope，默认 `openid profile email` |
 
 后端请求模型时，先按模型名筛选启用且包含该模型的渠道，再按 `weight` 加权随机选择一个渠道。
 

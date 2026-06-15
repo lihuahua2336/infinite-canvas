@@ -54,6 +54,7 @@ function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProg
 
 export function AppConfigModal() {
     const { message } = App.useApp();
+    const [aboutOpen, setAboutOpen] = useState(false);
     const [loadingModels, setLoadingModels] = useState(false);
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
@@ -177,203 +178,235 @@ export function AppConfigModal() {
     };
 
     return (
-        <Modal
-            title={
-                <div>
-                    <div className="text-lg font-semibold">配置与用户偏好</div>
-                    <div className="mt-1 text-xs font-normal text-stone-500">模型、渠道和画布默认行为</div>
-                </div>
-            }
-            open={isConfigOpen}
-            width={960}
-            centered
-            onCancel={() => setConfigDialogOpen(false)}
-            styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 18 } }}
-            footer={
-                <Button type="primary" onClick={finishConfig}>
-                    完成
-                </Button>
-            }
-        >
-            <div className="pt-1">
-                <Form layout="vertical" requiredMark={false}>
-                    {allowCustomChannel ? (
-                        <Form.Item label="渠道模式" className="mb-5">
-                            <Segmented
-                                block
-                                size="middle"
-                                value={effectiveMode}
-                                onChange={(value) => updateConfig("channelMode", value as AiConfig["channelMode"])}
-                                options={[
-                                    { label: "本地直连", value: "local" },
-                                    { label: "云端渠道", value: "remote" },
-                                ]}
-                            />
-                        </Form.Item>
-                    ) : null}
-                    {effectiveMode === "local" ? (
-                        <>
-                            <div className="grid gap-4 md:grid-cols-2">
-                                <Form.Item label="Base URL" className="mb-4">
-                                    <Input value={config.baseUrl} onChange={(event) => updateConfig("baseUrl", event.target.value)} />
-                                </Form.Item>
-                                <Form.Item label="API Key" className="mb-4">
-                                    <Input.Password value={config.apiKey} onChange={(event) => updateConfig("apiKey", event.target.value)} />
-                                </Form.Item>
-                            </div>
-                            <div className="mb-5 flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-800">
-                                <div className="min-w-0">
-                                    <div className="text-sm font-medium">模型列表</div>
-                                    <div className="mt-1 text-xs text-stone-500">当前已保存 {config.models.length} 个模型</div>
-                                </div>
-                                <Button size="small" loading={loadingModels} onClick={() => void refreshModels()}>
-                                    拉取模型列表
-                                </Button>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="mb-5 rounded-lg border border-stone-200 p-3 text-sm text-stone-500 dark:border-stone-800">
-                            <div className="font-medium text-stone-900 dark:text-stone-100">云端渠道</div>
-                            <div className="mt-1">由系统后台渠道转发请求，当前可用 {modelChannel?.availableModels.length || 0} 个模型。</div>
-                        </div>
-                    )}
-                    {effectiveMode === "local" ? (
-                        <section className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                            <div className="mb-3">
-                                <div className="text-sm font-semibold">本地模型可选项</div>
-                                <div className="mt-1 text-xs text-stone-500">从已拉取模型中选择哪些模型可进入各类下拉。</div>
-                            </div>
-                            <div className="grid gap-4 md:grid-cols-2">
-                                {modelGroups.map((group) => (
-                                    <Form.Item key={group.modelsKey} label={group.optionsLabel} className="mb-0">
-                                        <Select
-                                            mode="multiple"
-                                            showSearch
-                                            allowClear
-                                            maxTagCount="responsive"
-                                            placeholder={config.models.length ? `请选择${group.optionsLabel}` : "请先拉取模型列表"}
-                                            value={config[group.modelsKey]}
-                                            options={modelOptions}
-                                            onChange={(models) => updateCapabilityModels(group, models)}
-                                        />
-                                    </Form.Item>
-                                ))}
-                            </div>
-                        </section>
-                    ) : null}
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {modelGroups.map((group) => (
-                            <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-4">
-                                <ModelPicker config={modelConfig} value={modelConfig[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
-                            </Form.Item>
-                        ))}
+        <>
+            <Modal
+                title={
+                    <div>
+                        <div className="text-lg font-semibold">配置与用户偏好</div>
+                        <div className="mt-1 text-xs font-normal text-stone-500">模型、渠道和画布默认行为</div>
                     </div>
-                    <div className="grid gap-4 md:grid-cols-4">
-                        <Form.Item label="画布默认生图张数" extra="新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。" className="mb-4">
-                            <Input
-                                type="number"
-                                min={1}
-                                max={15}
-                                value={config.canvasImageCount}
-                                onChange={(event) => updateConfig("canvasImageCount", event.target.value)}
-                                onBlur={(event) => updateConfig("canvasImageCount", normalizeImageCount(event.target.value))}
-                            />
-                        </Form.Item>
-                        <Form.Item label="默认音频声音" className="mb-4">
-                            <Select value={config.audioVoice} options={audioVoiceOptions} onChange={(value) => updateConfig("audioVoice", value)} />
-                        </Form.Item>
-                        <Form.Item label="默认音频格式" className="mb-4">
-                            <Select value={config.audioFormat} options={audioFormatOptions} onChange={(value) => updateConfig("audioFormat", value)} />
-                        </Form.Item>
-                        <Form.Item label="默认音频语速" className="mb-4">
-                            <Input
-                                type="number"
-                                min={0.25}
-                                max={4}
-                                step={0.05}
-                                value={config.audioSpeed}
-                                onChange={(event) => updateConfig("audioSpeed", event.target.value)}
-                                onBlur={(event) => updateConfig("audioSpeed", normalizeAudioSpeedValue(event.target.value))}
-                            />
-                        </Form.Item>
-                    </div>
-                    <Form.Item label="默认音频指令" className="mb-4">
-                        <Input.TextArea rows={2} value={config.audioInstructions} placeholder="例如：自然、温暖、适合旁白。" onChange={(event) => updateConfig("audioInstructions", event.target.value)} />
-                    </Form.Item>
-                    {effectiveMode === "local" ? (
-                        <Form.Item label="系统提示词" className="mb-0">
-                            <Input.TextArea rows={3} value={config.systemPrompt} placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。" onChange={(event) => updateConfig("systemPrompt", event.target.value)} />
-                        </Form.Item>
-                    ) : null}
-                    <section className="mt-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <div className="flex items-center gap-2 text-sm font-semibold">
-                                    <Cloud className="size-4" />
-                                    WebDAV 同步
-                                </div>
-                                <div className="mt-1 text-xs text-stone-500">同步画布、我的素材、生成记录和本地媒体文件，不包含 AI API Key；服务不支持 CORS 时可走 Next.js 转发。</div>
-                            </div>
-                            <div className="text-xs text-stone-500">{webdav.lastSyncedAt ? `上次同步 ${formatWebdavTime(webdav.lastSyncedAt)}` : "尚未同步"}</div>
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <Form.Item label="连接方式" className="mb-4 md:col-span-2">
+                }
+                open={isConfigOpen}
+                width={960}
+                centered
+                onCancel={() => setConfigDialogOpen(false)}
+                styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 18 } }}
+                footer={
+                    <Button type="primary" onClick={finishConfig}>
+                        完成
+                    </Button>
+                }
+            >
+                <div className="pt-1">
+                    <Form layout="vertical" requiredMark={false}>
+                        {allowCustomChannel ? (
+                            <Form.Item label="渠道模式" className="mb-5">
                                 <Segmented
                                     block
-                                    value={webdav.proxyMode}
-                                    onChange={(value) => updateWebdavConfig("proxyMode", value as typeof webdav.proxyMode)}
+                                    size="middle"
+                                    value={effectiveMode}
+                                    onChange={(value) => updateConfig("channelMode", value as AiConfig["channelMode"])}
                                     options={[
-                                        { label: "前端直连", value: "direct" },
-                                        { label: "Next.js 转发", value: "nextjs" },
+                                        { label: "本地直连", value: "local" },
+                                        { label: "云端渠道", value: "remote" },
                                     ]}
                                 />
                             </Form.Item>
-                            <Form.Item label="WebDAV 地址" className="mb-4">
-                                <Input value={webdav.url} placeholder="https://nas.example.com/webdav" onChange={(event) => updateWebdavConfig("url", event.target.value)} />
-                            </Form.Item>
-                            <Form.Item label="远程目录" extra={`会在该目录下分业务目录保存，每个目录包含 ${WEBDAV_MANIFEST_FILE_NAME} 和 files/`} className="mb-4">
-                                <Input value={webdav.directory} placeholder="infinite-canvas" onChange={(event) => updateWebdavConfig("directory", event.target.value)} />
-                            </Form.Item>
-                            <Form.Item label="用户名" className="mb-0">
-                                <Input value={webdav.username} autoComplete="username" onChange={(event) => updateWebdavConfig("username", event.target.value)} />
-                            </Form.Item>
-                            <Form.Item label="密码 / 应用密码" className="mb-0">
-                                <Input.Password value={webdav.password} autoComplete="current-password" onChange={(event) => updateWebdavConfig("password", event.target.value)} />
-                            </Form.Item>
-                        </div>
-                        <div className="mt-4 flex flex-wrap items-center gap-2">
-                            <Button icon={<Wifi className="size-4" />} disabled={!webdavReady || syncingWebdav} loading={testingWebdav} onClick={() => void testWebdav()}>
-                                测试连接
-                            </Button>
-                            <Button type="primary" icon={<RefreshCw className="size-4" />} disabled={!webdavReady || testingWebdav} loading={syncingWebdav} onClick={() => void syncWebdav()}>
-                                {syncingWebdav ? "同步中" : "立即同步"}
-                            </Button>
-                            {webdavSyncStatus ? <span className="text-xs text-stone-500">{webdavSyncStatus}</span> : null}
-                        </div>
-                        {syncingWebdav || webdavSyncStatus ? (
-                            <div className="mt-3 grid gap-2">
-                                {webdavDomainKeys.map((key) => {
-                                    const item = webdavDomainProgress[key];
-                                    const count = item.total ? `${item.current || 0}/${item.total}` : "";
-                                    return (
-                                        <div key={key} className="rounded-md border border-stone-200 px-3 py-2 dark:border-stone-800">
-                                            <div className="mb-1 flex min-w-0 items-center justify-between gap-3 text-xs">
-                                                <span className="shrink-0 font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
-                                                <span className="min-w-0 truncate text-right text-stone-500">
-                                                    {item.stage}
-                                                    {count ? ` · ${count}` : ""}
-                                                </span>
-                                            </div>
-                                            <Progress percent={getWebdavProgressPercent(item)} size="small" status={getWebdavProgressStatus(item)} showInfo={false} />
-                                        </div>
-                                    );
-                                })}
-                            </div>
                         ) : null}
-                    </section>
-                </Form>
-            </div>
-        </Modal>
+                        {effectiveMode === "local" ? (
+                            <>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <Form.Item label="Base URL" className="mb-4">
+                                        <Input value={config.baseUrl} onChange={(event) => updateConfig("baseUrl", event.target.value)} />
+                                    </Form.Item>
+                                    <Form.Item label="API Key" className="mb-4">
+                                        <Input.Password value={config.apiKey} onChange={(event) => updateConfig("apiKey", event.target.value)} />
+                                    </Form.Item>
+                                </div>
+                                <div className="mb-5 flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-800">
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-medium">模型列表</div>
+                                        <div className="mt-1 text-xs text-stone-500">当前已保存 {config.models.length} 个模型</div>
+                                    </div>
+                                    <Button size="small" loading={loadingModels} onClick={() => void refreshModels()}>
+                                        拉取模型列表
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="mb-5 rounded-lg border border-stone-200 p-3 text-sm text-stone-500 dark:border-stone-800">
+                                <div className="font-medium text-stone-900 dark:text-stone-100">云端渠道</div>
+                                <div className="mt-1">由系统后台渠道转发请求，当前可用 {modelChannel?.availableModels.length || 0} 个模型。</div>
+                            </div>
+                        )}
+                        {effectiveMode === "local" ? (
+                            <section className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                <div className="mb-3">
+                                    <div className="text-sm font-semibold">本地模型可选项</div>
+                                    <div className="mt-1 text-xs text-stone-500">从已拉取模型中选择哪些模型可进入各类下拉。</div>
+                                </div>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    {modelGroups.map((group) => (
+                                        <Form.Item key={group.modelsKey} label={group.optionsLabel} className="mb-0">
+                                            <Select
+                                                mode="multiple"
+                                                showSearch
+                                                allowClear
+                                                maxTagCount="responsive"
+                                                placeholder={config.models.length ? `请选择${group.optionsLabel}` : "请先拉取模型列表"}
+                                                value={config[group.modelsKey]}
+                                                options={modelOptions}
+                                                onChange={(models) => updateCapabilityModels(group, models)}
+                                            />
+                                        </Form.Item>
+                                    ))}
+                                </div>
+                            </section>
+                        ) : null}
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                            {modelGroups.map((group) => (
+                                <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-4">
+                                    <ModelPicker config={modelConfig} value={modelConfig[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
+                                </Form.Item>
+                            ))}
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-4">
+                            <Form.Item label="画布默认生图张数" extra="新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。" className="mb-4">
+                                <Input
+                                    type="number"
+                                    min={1}
+                                    max={15}
+                                    value={config.canvasImageCount}
+                                    onChange={(event) => updateConfig("canvasImageCount", event.target.value)}
+                                    onBlur={(event) => updateConfig("canvasImageCount", normalizeImageCount(event.target.value))}
+                                />
+                            </Form.Item>
+                            <Form.Item label="默认音频声音" className="mb-4">
+                                <Select value={config.audioVoice} options={audioVoiceOptions} onChange={(value) => updateConfig("audioVoice", value)} />
+                            </Form.Item>
+                            <Form.Item label="默认音频格式" className="mb-4">
+                                <Select value={config.audioFormat} options={audioFormatOptions} onChange={(value) => updateConfig("audioFormat", value)} />
+                            </Form.Item>
+                            <Form.Item label="默认音频语速" className="mb-4">
+                                <Input
+                                    type="number"
+                                    min={0.25}
+                                    max={4}
+                                    step={0.05}
+                                    value={config.audioSpeed}
+                                    onChange={(event) => updateConfig("audioSpeed", event.target.value)}
+                                    onBlur={(event) => updateConfig("audioSpeed", normalizeAudioSpeedValue(event.target.value))}
+                                />
+                            </Form.Item>
+                        </div>
+                        <Form.Item label="默认音频指令" className="mb-4">
+                            <Input.TextArea rows={2} value={config.audioInstructions} placeholder="例如：自然、温暖、适合旁白。" onChange={(event) => updateConfig("audioInstructions", event.target.value)} />
+                        </Form.Item>
+                        {effectiveMode === "local" ? (
+                            <Form.Item label="系统提示词" className="mb-0">
+                                <Input.TextArea rows={3} value={config.systemPrompt} placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。" onChange={(event) => updateConfig("systemPrompt", event.target.value)} />
+                            </Form.Item>
+                        ) : null}
+                        <section className="mt-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <div className="flex items-center gap-2 text-sm font-semibold">
+                                        <Cloud className="size-4" />
+                                        WebDAV 同步
+                                    </div>
+                                    <div className="mt-1 text-xs text-stone-500">同步画布、我的素材、生成记录和本地媒体文件，不包含 AI API Key；服务不支持 CORS 时可走 Next.js 转发。</div>
+                                </div>
+                                <div className="text-xs text-stone-500">{webdav.lastSyncedAt ? `上次同步 ${formatWebdavTime(webdav.lastSyncedAt)}` : "尚未同步"}</div>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <Form.Item label="连接方式" className="mb-4 md:col-span-2">
+                                    <Segmented
+                                        block
+                                        value={webdav.proxyMode}
+                                        onChange={(value) => updateWebdavConfig("proxyMode", value as typeof webdav.proxyMode)}
+                                        options={[
+                                            { label: "前端直连", value: "direct" },
+                                            { label: "Next.js 转发", value: "nextjs" },
+                                        ]}
+                                    />
+                                </Form.Item>
+                                <Form.Item label="WebDAV 地址" className="mb-4">
+                                    <Input value={webdav.url} placeholder="https://nas.example.com/webdav" onChange={(event) => updateWebdavConfig("url", event.target.value)} />
+                                </Form.Item>
+                                <Form.Item label="远程目录" extra={`会在该目录下分业务目录保存，每个目录包含 ${WEBDAV_MANIFEST_FILE_NAME} 和 files/`} className="mb-4">
+                                    <Input value={webdav.directory} placeholder="infinite-canvas" onChange={(event) => updateWebdavConfig("directory", event.target.value)} />
+                                </Form.Item>
+                                <Form.Item label="用户名" className="mb-0">
+                                    <Input value={webdav.username} autoComplete="username" onChange={(event) => updateWebdavConfig("username", event.target.value)} />
+                                </Form.Item>
+                                <Form.Item label="密码 / 应用密码" className="mb-0">
+                                    <Input.Password value={webdav.password} autoComplete="current-password" onChange={(event) => updateWebdavConfig("password", event.target.value)} />
+                                </Form.Item>
+                            </div>
+                            <div className="mt-4 flex flex-wrap items-center gap-2">
+                                <Button icon={<Wifi className="size-4" />} disabled={!webdavReady || syncingWebdav} loading={testingWebdav} onClick={() => void testWebdav()}>
+                                    测试连接
+                                </Button>
+                                <Button type="primary" icon={<RefreshCw className="size-4" />} disabled={!webdavReady || testingWebdav} loading={syncingWebdav} onClick={() => void syncWebdav()}>
+                                    {syncingWebdav ? "同步中" : "立即同步"}
+                                </Button>
+                                {webdavSyncStatus ? <span className="text-xs text-stone-500">{webdavSyncStatus}</span> : null}
+                            </div>
+                            {syncingWebdav || webdavSyncStatus ? (
+                                <div className="mt-3 grid gap-2">
+                                    {webdavDomainKeys.map((key) => {
+                                        const item = webdavDomainProgress[key];
+                                        const count = item.total ? `${item.current || 0}/${item.total}` : "";
+                                        return (
+                                            <div key={key} className="rounded-md border border-stone-200 px-3 py-2 dark:border-stone-800">
+                                                <div className="mb-1 flex min-w-0 items-center justify-between gap-3 text-xs">
+                                                    <span className="shrink-0 font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
+                                                    <span className="min-w-0 truncate text-right text-stone-500">
+                                                        {item.stage}
+                                                        {count ? ` · ${count}` : ""}
+                                                    </span>
+                                                </div>
+                                                <Progress percent={getWebdavProgressPercent(item)} size="small" status={getWebdavProgressStatus(item)} showInfo={false} />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
+                        </section>
+                        <section className="mt-5 flex items-center justify-between gap-3 border-t border-stone-200 pt-4 dark:border-stone-800">
+                            <div>
+                                <div className="text-sm font-semibold text-stone-900 dark:text-stone-100">关于</div>
+                                <div className="mt-1 text-xs text-stone-500">查看来源和许可证信息。</div>
+                            </div>
+                            <Button onClick={() => setAboutOpen(true)}>关于</Button>
+                        </section>
+                    </Form>
+                </div>
+            </Modal>
+            <Modal
+                title="关于"
+                open={aboutOpen}
+                width={520}
+                centered
+                onCancel={() => setAboutOpen(false)}
+                footer={
+                    <Button type="primary" onClick={() => setAboutOpen(false)}>
+                        关闭
+                    </Button>
+                }
+            >
+                <div className="space-y-3 text-sm leading-6 text-stone-700 dark:text-stone-300">
+                    <p>本服务基于 infinite-canvas 修改构建。</p>
+                    <p>
+                        原项目：
+                        <a href="https://github.com/basketikun/infinite-canvas" target="_blank" rel="noopener noreferrer" className="text-stone-950 underline underline-offset-4 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
+                            basketikun/infinite-canvas
+                        </a>
+                    </p>
+                    <p>许可证：GNU AGPL-3.0</p>
+                </div>
+            </Modal>
+        </>
     );
 }
 

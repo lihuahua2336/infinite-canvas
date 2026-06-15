@@ -22,6 +22,8 @@ export type AdminUser = {
     affCount: number;
     inviterId: string;
     linuxDoId: string;
+    oidcIssuer: string;
+    oidcSubject: string;
     status: "active" | "ban";
     lastLoginAt: string;
     createdAt: string;
@@ -187,8 +189,15 @@ export type AdminPublicSettings = {
     modelChannel: AdminPublicModelChannelSettings;
     auth: {
         allowRegister: boolean;
+        passwordLogin: {
+            enabled: boolean;
+        };
         linuxDo: {
             enabled: boolean;
+        };
+        oidc: {
+            enabled: boolean;
+            name: string;
         };
     };
 };
@@ -203,6 +212,13 @@ export type AdminPrivateSettings = {
         linuxDo: {
             clientId: string;
             clientSecret: string;
+        };
+        oidc: {
+            issuer: string;
+            internalIssuer: string;
+            clientId: string;
+            clientSecret: string;
+            scope: string;
         };
     };
 };

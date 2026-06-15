@@ -91,6 +91,12 @@ export default function AdminUsersPage() {
             render: (_, item) => <Typography.Text type="secondary">{item.linuxDoId || "-"}</Typography.Text>,
         },
         {
+            title: "OIDC",
+            dataIndex: "oidcSubject",
+            width: 160,
+            render: (_, item) => <Typography.Text type="secondary">{item.oidcSubject || "-"}</Typography.Text>,
+        },
+        {
             title: "最近登录",
             dataIndex: "lastLoginAt",
             width: 180,
@@ -124,7 +130,7 @@ export default function AdminUsersPage() {
                                 <Form.Item label="关键词">
                                     <Input.Search
                                         value={keywordText}
-                                        placeholder="搜索用户名、昵称、邮箱或 Linux.do ID"
+                                        placeholder="搜索用户名、昵称、邮箱、Linux.do ID 或 OIDC Subject"
                                         allowClear
                                         enterButton={<SearchOutlined />}
                                         onSearch={() => searchUsers(keywordText)}

@@ -42,7 +42,10 @@ function LoginContent() {
     const setSession = useUserStore((state) => state.setSession);
     const isLoading = useUserStore((state) => state.isLoading);
     const linuxDoEnabled = useConfigStore((state) => state.publicSettings?.auth?.linuxDo?.enabled === true);
+    const oidc = useConfigStore((state) => state.publicSettings?.auth?.oidc);
+    const oidcName = oidc?.name || "Logto";
     const allowRegister = useConfigStore((state) => state.publicSettings?.auth?.allowRegister !== false);
+    const passwordLoginEnabled = useConfigStore((state) => state.publicSettings?.auth?.passwordLogin?.enabled !== false);
     const [mode, setMode] = useState<"login" | "register">("login");
     const redirect = safeRedirect(searchParams.get("redirect"));
 
@@ -65,6 +68,10 @@ function LoginContent() {
 
     const submit = async (values: LoginFormValues) => {
         try {
+            if (!passwordLoginEnabled) {
+                message.error("账号密码登录已关闭");
+                return;
+            }
             if (mode === "register" && !allowRegister) {
                 message.error("当前未开放注册");
                 return;
@@ -96,37 +103,53 @@ function LoginContent() {
                         }}
                         aria-label="无限画布"
                     />
-                    <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">账号登录</h1>
-                    <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">支持账号密码和 Linux.do 登录。</p>
+                    <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">{passwordLoginEnabled ? "账号登录" : "登录"}</h1>
+                    <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">{passwordLoginEnabled ? "支持账号密码和第三方登录。" : `请使用 ${oidcName} 继续访问。`}</p>
                 </div>
 
                 <Form<LoginFormValues> layout="vertical" size="large" requiredMark={false} onFinish={submit}>
-                    <Form.Item>
-                        <Segmented
-                            block
-                            value={mode}
-                            onChange={(value) => setMode(value as "login" | "register")}
-                            options={allowRegister ? [{ label: "登录", value: "login" }, { label: "注册", value: "register" }] : [{ label: "登录", value: "login" }]}
-                        />
-                    </Form.Item>
-                    <Form.Item name="username" label={<span className="font-medium text-stone-800 dark:text-stone-200">用户名</span>} rules={[{ required: true, message: "请输入用户名" }]}>
-                        <Input prefix={<UserOutlined />} autoComplete="username" />
-                    </Form.Item>
-                    <Form.Item name="password" label={<span className="font-medium text-stone-800 dark:text-stone-200">密码</span>} rules={[{ required: true, message: "请输入密码" }]}>
-                        <Input.Password prefix={<LockOutlined />} autoComplete="current-password" />
-                    </Form.Item>
-                    {mode === "register" ? (
-                        <Form.Item name="confirmPassword" label={<span className="font-medium text-stone-800 dark:text-stone-200">确认密码</span>} rules={[{ required: true, message: "请再次输入密码" }]}>
-                            <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
-                        </Form.Item>
+                    {passwordLoginEnabled ? (
+                        <>
+                            <Form.Item>
+                                <Segmented
+                                    block
+                                    value={mode}
+                                    onChange={(value) => setMode(value as "login" | "register")}
+                                    options={allowRegister ? [{ label: "登录", value: "login" }, { label: "注册", value: "register" }] : [{ label: "登录", value: "login" }]}
+                                />
+                            </Form.Item>
+                            <Form.Item name="username" label={<span className="font-medium text-stone-800 dark:text-stone-200">用户名</span>} rules={[{ required: true, message: "请输入用户名" }]}>
+                                <Input prefix={<UserOutlined />} autoComplete="username" />
+                            </Form.Item>
+                            <Form.Item name="password" label={<span className="font-medium text-stone-800 dark:text-stone-200">密码</span>} rules={[{ required: true, message: "请输入密码" }]}>
+                                <Input.Password prefix={<LockOutlined />} autoComplete="current-password" />
+                            </Form.Item>
+                            {mode === "register" ? (
+                                <Form.Item name="confirmPassword" label={<span className="font-medium text-stone-800 dark:text-stone-200">确认密码</span>} rules={[{ required: true, message: "请再次输入密码" }]}>
+                                    <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
+                                </Form.Item>
+                            ) : null}
+                            <Form.Item>
+                                <Button block type="primary" htmlType="submit" loading={isLoading}>
+                                    {mode === "register" ? "注册" : "登录"}
+                                </Button>
+                            </Form.Item>
+                        </>
                     ) : null}
                     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-                        <Button block type="primary" htmlType="submit" loading={isLoading}>
-                            {mode === "register" ? "注册" : "登录"}
-                        </Button>
                         {linuxDoEnabled ? (
                             <Button block href={`/api/auth/linux-do/authorize?redirect=${encodeURIComponent(redirect)}`} icon={<img src="/icons/linuxdo.svg" alt="" width={18} height={18} />}>
                                 使用 Linux.do 登录
+                            </Button>
+                        ) : null}
+                        {oidc?.enabled ? (
+                            <Button block href={`/api/auth/oidc/authorize?redirect=${encodeURIComponent(redirect)}`}>
+                                使用 {oidcName} 登录
+                            </Button>
+                        ) : null}
+                        {!linuxDoEnabled && !oidc?.enabled && !passwordLoginEnabled ? (
+                            <Button block disabled>
+                                暂无可用登录方式
                             </Button>
                         ) : null}
                     </Space>

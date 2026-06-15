@@ -93,6 +93,14 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		enabled := true
 		setting.Auth.AllowRegister = &enabled
 	}
+	if setting.Auth.PasswordLogin.Enabled == nil {
+		enabled := true
+		setting.Auth.PasswordLogin.Enabled = &enabled
+	}
+	setting.Auth.OIDC.Name = strings.TrimSpace(setting.Auth.OIDC.Name)
+	if setting.Auth.OIDC.Name == "" {
+		setting.Auth.OIDC.Name = "Logto"
+	}
 	enabledModels := enabledChannelModels(channels)
 	if len(enabledModels) > 0 {
 		setting.ModelChannel.AvailableModels = enabledModels
@@ -136,6 +144,13 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 			setting.Channels[i].Weight = 1
 		}
 	}
+	setting.Auth.OIDC.Issuer = strings.TrimRight(strings.TrimSpace(setting.Auth.OIDC.Issuer), "/")
+	setting.Auth.OIDC.InternalIssuer = strings.TrimRight(strings.TrimSpace(setting.Auth.OIDC.InternalIssuer), "/")
+	setting.Auth.OIDC.ClientID = strings.TrimSpace(setting.Auth.OIDC.ClientID)
+	setting.Auth.OIDC.Scope = strings.TrimSpace(setting.Auth.OIDC.Scope)
+	if setting.Auth.OIDC.Scope == "" {
+		setting.Auth.OIDC.Scope = "openid profile email"
+	}
 	return setting
 }
 
@@ -144,6 +159,7 @@ func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 		settings.Private.Channels[i].APIKey = ""
 	}
 	settings.Private.Auth.LinuxDo.ClientSecret = ""
+	settings.Private.Auth.OIDC.ClientSecret = ""
 	return settings
 }
 
@@ -161,6 +177,9 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 func keepPrivateAuthSecrets(settings *model.Settings, saved model.Settings) {
 	if strings.TrimSpace(settings.Private.Auth.LinuxDo.ClientSecret) == "" {
 		settings.Private.Auth.LinuxDo.ClientSecret = saved.Private.Auth.LinuxDo.ClientSecret
+	}
+	if strings.TrimSpace(settings.Private.Auth.OIDC.ClientSecret) == "" {
+		settings.Private.Auth.OIDC.ClientSecret = saved.Private.Auth.OIDC.ClientSecret
 	}
 }
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -16,9 +17,11 @@ import (
 	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/oauth2"
 )
 
 type TokenClaims struct {
@@ -30,6 +33,7 @@ type TokenClaims struct {
 
 type userExtra struct {
 	LinuxDo any `json:"linuxDo,omitempty"`
+	OIDC    any `json:"oidc,omitempty"`
 }
 
 func EnsureDefaultAdmin() error {
@@ -202,6 +206,100 @@ func LoginWithLinuxDo(r *http.Request, code string, state string) (model.AuthSes
 	return session, redirect, err
 }
 
+func OIDCAuthorizeURL(r *http.Request, redirect string) (string, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return "", err
+	}
+	settings = normalizeSettings(settings)
+	oidcSetting := settings.Private.Auth.OIDC
+	if !settings.Public.Auth.OIDC.Enabled {
+		return "", safeMessageError{message: oidcDisplayName(settings.Public.Auth.OIDC.Name) + " 登录未开启"}
+	}
+	if oidcSetting.Issuer == "" || oidcSetting.ClientID == "" || oidcSetting.ClientSecret == "" {
+		return "", safeMessageError{message: oidcDisplayName(settings.Public.Auth.OIDC.Name) + " 登录未配置"}
+	}
+	ctx, cancel := oidcRequestContext(r, oidcSetting)
+	defer cancel()
+	provider, err := oidc.NewProvider(ctx, oidcSetting.Issuer)
+	if err != nil {
+		return "", safeMessageError{message: "OIDC Issuer 发现失败"}
+	}
+	config := oidcOAuthConfig(r, provider, oidcSetting)
+	return config.AuthCodeURL(base64.RawURLEncoding.EncodeToString([]byte(redirect))), nil
+}
+
+func LoginWithOIDC(r *http.Request, code string, state string) (model.AuthSession, string, error) {
+	redirect := decodeState(state)
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	settings = normalizeSettings(settings)
+	oidcSetting := settings.Private.Auth.OIDC
+	if !settings.Public.Auth.OIDC.Enabled {
+		return model.AuthSession{}, redirect, safeMessageError{message: oidcDisplayName(settings.Public.Auth.OIDC.Name) + " 登录未开启"}
+	}
+	if oidcSetting.Issuer == "" || oidcSetting.ClientID == "" || oidcSetting.ClientSecret == "" {
+		return model.AuthSession{}, redirect, safeMessageError{message: oidcDisplayName(settings.Public.Auth.OIDC.Name) + " 登录未配置"}
+	}
+	ctx, cancel := oidcRequestContext(r, oidcSetting)
+	defer cancel()
+	provider, err := oidc.NewProvider(ctx, oidcSetting.Issuer)
+	if err != nil {
+		return model.AuthSession{}, redirect, safeMessageError{message: "OIDC Issuer 发现失败"}
+	}
+	token, err := oidcOAuthConfig(r, provider, oidcSetting).Exchange(ctx, code)
+	if err != nil {
+		return model.AuthSession{}, redirect, safeMessageError{message: "OIDC 登录失败"}
+	}
+	profile, err := oidcProfile(ctx, provider, token, oidcSetting)
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	subject := strings.TrimSpace(profile.Sub)
+	if subject == "" {
+		return model.AuthSession{}, redirect, safeMessageError{message: "OIDC 用户信息无效"}
+	}
+	user, ok, err := repository.GetUserByOIDCSubject(oidcSetting.Issuer, subject)
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	if !ok {
+		if settings.Public.Auth.AllowRegister != nil && !*settings.Public.Auth.AllowRegister {
+			return model.AuthSession{}, redirect, safeMessageError{message: "当前未开放注册"}
+		}
+		user = model.User{
+			ID:          newID("user"),
+			Username:    oidcUsername(profile),
+			Email:       strings.TrimSpace(profile.Email),
+			DisplayName: firstNonEmpty(profile.Name, profile.Nickname, profile.PreferredUsername, profile.Username),
+			AvatarURL:   firstNonEmpty(profile.Picture, profile.AvatarURL),
+			Role:        model.UserRoleUser,
+			AffCode:     newAffCode(),
+			OIDCIssuer:  oidcSetting.Issuer,
+			OIDCSubject: subject,
+			Status:      model.UserStatusActive,
+			CreatedAt:   now(),
+		}
+	} else if user.Status == model.UserStatusBan {
+		return model.AuthSession{}, redirect, safeMessageError{message: "账号已被禁用"}
+	}
+	user.Email = firstNonEmpty(profile.Email, user.Email)
+	user.DisplayName = firstNonEmpty(profile.Name, profile.Nickname, profile.PreferredUsername, profile.Username, user.DisplayName)
+	user.AvatarURL = firstNonEmpty(profile.Picture, profile.AvatarURL, user.AvatarURL)
+	user.LastLoginAt = now()
+	user.UpdatedAt = now()
+	extra, _ := json.Marshal(userExtra{OIDC: profile})
+	user.Extra = string(extra)
+	user, err = repository.SaveUser(user)
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	session, err := newSession(user)
+	return session, redirect, err
+}
+
 func ParseToken(tokenText string) (TokenClaims, error) {
 	claims := TokenClaims{}
 	token, err := jwt.ParseWithClaims(tokenText, &claims, func(token *jwt.Token) (any, error) {
@@ -283,6 +381,12 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		}
 		if user.LinuxDoID == "" {
 			user.LinuxDoID = saved.LinuxDoID
+		}
+		if user.OIDCIssuer == "" {
+			user.OIDCIssuer = saved.OIDCIssuer
+		}
+		if user.OIDCSubject == "" {
+			user.OIDCSubject = saved.OIDCSubject
 		}
 		user.LastLoginAt = saved.LastLoginAt
 	}
@@ -470,6 +574,24 @@ type linuxDoUserResponse struct {
 	AvatarTemplate string `json:"avatar_template"`
 }
 
+type oidcUserProfile struct {
+	Sub               string `json:"sub"`
+	Email             string `json:"email"`
+	EmailVerified     bool   `json:"email_verified"`
+	Name              string `json:"name"`
+	Nickname          string `json:"nickname"`
+	PreferredUsername string `json:"preferred_username"`
+	Username          string `json:"username"`
+	Picture           string `json:"picture"`
+	AvatarURL         string `json:"avatar_url"`
+}
+
+type oidcRewriteTransport struct {
+	base     http.RoundTripper
+	public   *url.URL
+	internal *url.URL
+}
+
 func linuxDoAccessToken(r *http.Request, code string, setting model.PrivateLinuxDoAuthSetting) (string, error) {
 	values := url.Values{}
 	values.Set("client_id", setting.ClientID)
@@ -536,6 +658,165 @@ func linuxDoAvatar(template string) string {
 		template = "https://linux.do" + template
 	}
 	return strings.ReplaceAll(template, "{size}", "120")
+}
+
+func oidcRequestContext(r *http.Request, setting model.PrivateOIDCAuthSetting) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	client := oidcInternalHTTPClient(setting)
+	if client == nil {
+		return ctx, cancel
+	}
+	ctx = oidc.ClientContext(ctx, client)
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
+	return ctx, cancel
+}
+
+func oidcOAuthConfig(r *http.Request, provider *oidc.Provider, setting model.PrivateOIDCAuthSetting) *oauth2.Config {
+	scopes := strings.Fields(setting.Scope)
+	if !stringInSlice("openid", scopes) {
+		scopes = append([]string{"openid"}, scopes...)
+	}
+	return &oauth2.Config{
+		ClientID:     setting.ClientID,
+		ClientSecret: setting.ClientSecret,
+		Endpoint:     provider.Endpoint(),
+		RedirectURL:  oidcRedirectURI(r),
+		Scopes:       scopes,
+	}
+}
+
+func oidcRedirectURI(r *http.Request) string {
+	return RequestOrigin(r) + "/api/auth/oidc/callback"
+}
+
+func oidcInternalHTTPClient(setting model.PrivateOIDCAuthSetting) *http.Client {
+	if setting.InternalIssuer == "" || setting.InternalIssuer == setting.Issuer {
+		return nil
+	}
+	publicURL, publicErr := url.Parse(setting.Issuer)
+	internalURL, internalErr := url.Parse(setting.InternalIssuer)
+	if publicErr != nil || internalErr != nil || publicURL.Scheme == "" || publicURL.Host == "" || internalURL.Scheme == "" || internalURL.Host == "" {
+		return nil
+	}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: oidcRewriteTransport{
+			base:     http.DefaultTransport,
+			public:   publicURL,
+			internal: internalURL,
+		},
+	}
+}
+
+func (transport oidcRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	if clone.URL.Scheme == transport.public.Scheme && clone.URL.Host == transport.public.Host {
+		publicPath := strings.TrimRight(transport.public.Path, "/")
+		internalPath := strings.TrimRight(transport.internal.Path, "/")
+		if publicPath == "" || clone.URL.Path == publicPath || strings.HasPrefix(clone.URL.Path, publicPath+"/") {
+			suffix := strings.TrimPrefix(clone.URL.Path, publicPath)
+			clonedURL := *clone.URL
+			clonedURL.Scheme = transport.internal.Scheme
+			clonedURL.Host = transport.internal.Host
+			clonedURL.Path = internalPath + suffix
+			clonedURL.RawPath = ""
+			clone.URL = &clonedURL
+			clone.Host = transport.public.Host
+		}
+	}
+	base := transport.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(clone)
+}
+
+func oidcProfile(ctx context.Context, provider *oidc.Provider, token *oauth2.Token, setting model.PrivateOIDCAuthSetting) (oidcUserProfile, error) {
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok || strings.TrimSpace(rawIDToken) == "" {
+		return oidcUserProfile{}, safeMessageError{message: "OIDC 登录失败：缺少 ID Token"}
+	}
+	idToken, err := provider.Verifier(&oidc.Config{ClientID: setting.ClientID}).Verify(ctx, rawIDToken)
+	if err != nil {
+		return oidcUserProfile{}, safeMessageError{message: "OIDC ID Token 校验失败"}
+	}
+	profile := oidcUserProfile{}
+	if err := idToken.Claims(&profile); err != nil {
+		return oidcUserProfile{}, err
+	}
+	userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
+	if err == nil {
+		info := oidcUserProfile{}
+		if userInfo.Claims(&info) == nil {
+			profile = mergeOIDCProfile(profile, info)
+		}
+	}
+	return profile, nil
+}
+
+func mergeOIDCProfile(base oidcUserProfile, extra oidcUserProfile) oidcUserProfile {
+	return oidcUserProfile{
+		Sub:               firstNonEmpty(base.Sub, extra.Sub),
+		Email:             firstNonEmpty(extra.Email, base.Email),
+		EmailVerified:     extra.EmailVerified || base.EmailVerified,
+		Name:              firstNonEmpty(extra.Name, base.Name),
+		Nickname:          firstNonEmpty(extra.Nickname, base.Nickname),
+		PreferredUsername: firstNonEmpty(extra.PreferredUsername, base.PreferredUsername),
+		Username:          firstNonEmpty(extra.Username, base.Username),
+		Picture:           firstNonEmpty(extra.Picture, base.Picture),
+		AvatarURL:         firstNonEmpty(extra.AvatarURL, base.AvatarURL),
+	}
+}
+
+func oidcUsername(profile oidcUserProfile) string {
+	base := firstNonEmpty(profile.PreferredUsername, profile.Username, emailLocalPart(profile.Email), profile.Nickname, profile.Name)
+	base = strings.Join(strings.Fields(strings.TrimSpace(base)), "-")
+	if base == "" {
+		base = "oidc-" + oidcSubjectSuffix(profile.Sub)
+	}
+	if _, ok, err := repository.GetUserByUsername(base); err != nil || !ok {
+		return base
+	}
+	return base + "-" + oidcSubjectSuffix(profile.Sub)
+}
+
+func emailLocalPart(email string) string {
+	if index := strings.Index(email, "@"); index > 0 {
+		return email[:index]
+	}
+	return ""
+}
+
+func oidcSubjectSuffix(subject string) string {
+	suffix := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, subject)
+	if len(suffix) > 12 {
+		return suffix[:12]
+	}
+	if suffix == "" {
+		return uuid.NewString()[:8]
+	}
+	return suffix
+}
+
+func oidcDisplayName(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return "OIDC"
+	}
+	return strings.TrimSpace(name)
+}
+
+func stringInSlice(value string, values []string) bool {
+	for _, item := range values {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeState(state string) string {

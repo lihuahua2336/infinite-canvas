@@ -46,12 +46,23 @@ type PublicSetting struct {
 }
 
 type PublicAuthSetting struct {
-	AllowRegister *bool                    `json:"allowRegister"`
-	LinuxDo       PublicLinuxDoAuthSetting `json:"linuxDo"`
+	AllowRegister *bool                          `json:"allowRegister"`
+	PasswordLogin PublicPasswordLoginAuthSetting `json:"passwordLogin"`
+	LinuxDo       PublicLinuxDoAuthSetting       `json:"linuxDo"`
+	OIDC          PublicOIDCAuthSetting          `json:"oidc"`
+}
+
+type PublicPasswordLoginAuthSetting struct {
+	Enabled *bool `json:"enabled"`
 }
 
 type PublicLinuxDoAuthSetting struct {
 	Enabled bool `json:"enabled"`
+}
+
+type PublicOIDCAuthSetting struct {
+	Enabled bool   `json:"enabled"`
+	Name    string `json:"name"`
 }
 
 // PrivateSetting 私有配置。
@@ -69,11 +80,20 @@ type PromptSyncSetting struct {
 
 type PrivateAuthSetting struct {
 	LinuxDo PrivateLinuxDoAuthSetting `json:"linuxDo"`
+	OIDC    PrivateOIDCAuthSetting    `json:"oidc"`
 }
 
 type PrivateLinuxDoAuthSetting struct {
 	ClientID     string `json:"clientId"`
 	ClientSecret string `json:"clientSecret"`
+}
+
+type PrivateOIDCAuthSetting struct {
+	Issuer         string `json:"issuer"`
+	InternalIssuer string `json:"internalIssuer"`
+	ClientID       string `json:"clientId"`
+	ClientSecret   string `json:"clientSecret"`
+	Scope          string `json:"scope"`
 }
 
 // Setting 系统配置。
