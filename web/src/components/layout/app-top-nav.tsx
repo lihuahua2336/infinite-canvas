@@ -15,7 +15,7 @@ export function AppTopNav() {
     const pathname = usePathname();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
-    const isHomePage = pathname === "/";
+    const hideExternalLinks = pathname === "/" || pathname === "/login";
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
 
@@ -70,7 +70,7 @@ export function AppTopNav() {
                         </div>
 
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
-                            <UserStatusActions hideExternalLinks={isHomePage} />
+                            <UserStatusActions hideExternalLinks={hideExternalLinks} />
                         </div>
                     </div>
                 </header>
