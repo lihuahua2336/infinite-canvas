@@ -403,6 +403,12 @@ export function AppConfigModal() {
                             basketikun/infinite-canvas
                         </a>
                     </p>
+                    <p>
+                        本项目：
+                        <a href="https://github.com/lihuahua2336/infinite-canvas" target="_blank" rel="noopener noreferrer" className="text-stone-950 underline underline-offset-4 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
+                            lihuahua2336/infinite-canvas
+                        </a>
+                    </p>
                     <p>许可证：GNU AGPL-3.0</p>
                 </div>
             </Modal>
