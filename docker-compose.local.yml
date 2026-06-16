@@ -10,4 +10,11 @@ services:
       - ./data:/app/data
     ports:
       - "3000:3000"
+    networks:
+      - default
+      - logto_default
     restart: unless-stopped
+
+networks:
+  logto_default:
+    external: true

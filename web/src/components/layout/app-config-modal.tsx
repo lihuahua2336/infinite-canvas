@@ -2,9 +2,10 @@
 
 import { App, Button, Form, Input, Modal, Progress, Segmented, Select } from "antd";
 import { Cloud, RefreshCw, Wifi } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
+import { useNewAPIConfig } from "@/hooks/use-new-api-config";
 import { fetchImageModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -76,6 +77,13 @@ export function AppConfigModal() {
     const modelConfig = effectiveMode === "remote" ? effectiveConfig : config;
     const modelOptions = config.models.map((model) => ({ label: model, value: model }));
     const webdavReady = Boolean(webdav.url.trim());
+    const { newAPIConfig, loadNewAPIConfig, loading: loadingNewAPIConfig } = useNewAPIConfig();
+    const remoteModelCount = newAPIConfig?.models.length || effectiveConfig.models.length || 0;
+    const remoteTokenCount = newAPIConfig?.tokens.length || 0;
+
+    useEffect(() => {
+        if (isConfigOpen && effectiveMode === "remote") void loadNewAPIConfig();
+    }, [effectiveMode, isConfigOpen, loadNewAPIConfig]);
 
     const finishConfig = () => {
         setConfigDialogOpen(false);
@@ -87,7 +95,10 @@ export function AppConfigModal() {
     };
 
     const refreshModels = async () => {
-        if (effectiveMode === "remote") return;
+        if (effectiveMode === "remote") {
+            await loadNewAPIConfig();
+            return;
+        }
         if (!config.baseUrl.trim() || !config.apiKey.trim()) {
             message.error("请先填写 Base URL 和 API Key");
             return;
@@ -207,8 +218,8 @@ export function AppConfigModal() {
                                     value={effectiveMode}
                                     onChange={(value) => updateConfig("channelMode", value as AiConfig["channelMode"])}
                                     options={[
-                                        { label: "本地直连", value: "local" },
                                         { label: "云端渠道", value: "remote" },
+                                        { label: "本地直连", value: "local" },
                                     ]}
                                 />
                             </Form.Item>
@@ -235,8 +246,25 @@ export function AppConfigModal() {
                             </>
                         ) : (
                             <div className="mb-5 rounded-lg border border-stone-200 p-3 text-sm text-stone-500 dark:border-stone-800">
-                                <div className="font-medium text-stone-900 dark:text-stone-100">云端渠道</div>
-                                <div className="mt-1">由系统后台渠道转发请求，当前可用 {modelChannel?.availableModels.length || 0} 个模型。</div>
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="font-medium text-stone-900 dark:text-stone-100">云端渠道</div>
+                                        <div className="mt-1">
+                                            通过 Logto 读取 New API 提供的模型和令牌，当前可用 {remoteModelCount} 个模型、{remoteTokenCount} 个令牌。
+                                        </div>
+                                        {newAPIConfig?.message ? <div className="mt-1 text-xs text-stone-500">{newAPIConfig.message}</div> : null}
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <Button size="small" loading={loadingNewAPIConfig} onClick={() => void loadNewAPIConfig()}>
+                                            刷新
+                                        </Button>
+                                        {newAPIConfig?.loginUrl ? (
+                                            <Button size="small" href={newAPIConfig.loginUrl} target="_blank" rel="noopener noreferrer">
+                                                前往 New API 配置
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                </div>
                             </div>
                         )}
                         {effectiveMode === "local" ? (
@@ -266,7 +294,7 @@ export function AppConfigModal() {
                         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                             {modelGroups.map((group) => (
                                 <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-4">
-                                    <ModelPicker config={modelConfig} value={modelConfig[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
+                                    <ModelPicker config={modelConfig} value={modelConfig[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} onMissingConfig={() => void loadNewAPIConfig()} fullWidth />
                                 </Form.Item>
                             ))}
                         </div>
@@ -401,12 +429,6 @@ export function AppConfigModal() {
                         原项目：
                         <a href="https://github.com/basketikun/infinite-canvas" target="_blank" rel="noopener noreferrer" className="text-stone-950 underline underline-offset-4 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
                             basketikun/infinite-canvas
-                        </a>
-                    </p>
-                    <p>
-                        本项目：
-                        <a href="https://github.com/lihuahua2336/infinite-canvas" target="_blank" rel="noopener noreferrer" className="text-stone-950 underline underline-offset-4 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
-                            lihuahua2336/infinite-canvas
                         </a>
                     </p>
                     <p>许可证：GNU AGPL-3.0</p>

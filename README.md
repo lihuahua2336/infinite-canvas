@@ -30,7 +30,7 @@
 - 本地 Agent：通过本机 Canvas Agent 连接 Codex / Claude Code，让 Agent 通过 MCP 操作当前画布。
 - 提示词库：抓取多个 GitHub 开源项目，按案例整理数百个图片提示词。
 
-完整功能说明见 [docs/features.md](docs2/features.md)。
+完整功能说明见 [文档索引](docs/index.md)。
 
 如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
 
@@ -63,16 +63,18 @@ docker compose -f docker-compose.local.yml up -d --build
 
 如需要拉取提示词，可前往:`http://localhost:3000/admin/prompts`
 
-## New API 自动配置
+## New API 云端渠道
 
-如果使用 New API，可在 `系统设置 -> 聊天方式 -> 添加聊天设置` 中填入：
+默认云端渠道可通过 Logto 接入 New API。配置 `.env`：
 
 ```text
-https://canvas.best?apiKey={key}&baseUrl={address}
+NEW_API_BASE_URL=https://new-api.example.com
+NEW_API_PUBLIC_URL=https://new-api.example.com
+NEW_API_LOGTO_AUDIENCE=https://new-api.example.com/api
+NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read
 ```
 
-跳转后会自动打开配置弹窗并填入 API Key 和 Base URL。
-如果自己部署了，可以把 `https://canvas.best` 替换成你部署的地址。
+`NEW_API_BASE_URL` 填后端可访问的 HTTP 地址；如果 New API 在同一台 Docker 宿主机上，可按实际端口填 `http://host.docker.internal:端口` 或宿主机 IP。用户使用 Logto 登录本服务后，配置弹窗会读取 New API 提供的模型列表和用户令牌状态；如果 New API 还没有对应账户或令牌，会提示跳转到 New API 登录并配置。
 
 ## 效果展示
 
@@ -93,14 +95,10 @@ https://canvas.best?apiKey={key}&baseUrl={address}
 
 ## 文档
 
-- [功能介绍](docs2/features.md)
-- [部署说明](docs2/deployment.md)
-- [画布节点操作手册](docs2/canvas-node-manual.md)
-- [画布快捷键](docs2/canvas-shortcuts.md)
-- [待办事项](docs2/todo.md)
-- [后端数据库说明](docs2/backend-database.md)
-- [系统配置数据结构](docs2/system-settings.md)
-- [接口响应约定](docs2/api-response.md)
+- [文档索引](docs/index.md)
+- [后端数据库说明](docs/content/docs/backend/backend-database.mdx)
+- [系统配置数据结构](docs/content/docs/backend/system-settings.mdx)
+- [接口响应约定](docs/content/docs/backend/api-response.mdx)
 - [本地 Canvas Agent](canvas-agent/README.md)
 
 ## 赞助支持

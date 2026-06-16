@@ -32,8 +32,18 @@ type TokenClaims struct {
 }
 
 type userExtra struct {
-	LinuxDo any `json:"linuxDo,omitempty"`
-	OIDC    any `json:"oidc,omitempty"`
+	LinuxDo any              `json:"linuxDo,omitempty"`
+	OIDC    any              `json:"oidc,omitempty"`
+	NewAPI  *newAPITokenInfo `json:"newApi,omitempty"`
+}
+
+type newAPITokenInfo struct {
+	AccessToken  string `json:"accessToken,omitempty"`
+	RefreshToken string `json:"refreshToken,omitempty"`
+	TokenType    string `json:"tokenType,omitempty"`
+	Expiry       string `json:"expiry,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	Audience     string `json:"audience,omitempty"`
 }
 
 func EnsureDefaultAdmin() error {
@@ -196,8 +206,9 @@ func LoginWithLinuxDo(r *http.Request, code string, state string) (model.AuthSes
 	user.AvatarURL = firstNonEmpty(linuxDoAvatar(profile.AvatarTemplate), user.AvatarURL)
 	user.LastLoginAt = now()
 	user.UpdatedAt = now()
-	extra, _ := json.Marshal(userExtra{LinuxDo: profile})
-	user.Extra = string(extra)
+	extra := readUserExtra(user.Extra)
+	extra.LinuxDo = profile
+	user.Extra = marshalUserExtra(extra)
 	user, err = repository.SaveUser(user)
 	if err != nil {
 		return model.AuthSession{}, redirect, err
@@ -226,7 +237,7 @@ func OIDCAuthorizeURL(r *http.Request, redirect string) (string, error) {
 		return "", safeMessageError{message: "OIDC Issuer 发现失败"}
 	}
 	config := oidcOAuthConfig(r, provider, oidcSetting)
-	return config.AuthCodeURL(base64.RawURLEncoding.EncodeToString([]byte(redirect))), nil
+	return config.AuthCodeURL(base64.RawURLEncoding.EncodeToString([]byte(redirect)), newAPITokenRequestOptions()...), nil
 }
 
 func LoginWithOIDC(r *http.Request, code string, state string) (model.AuthSession, string, error) {
@@ -249,7 +260,7 @@ func LoginWithOIDC(r *http.Request, code string, state string) (model.AuthSessio
 	if err != nil {
 		return model.AuthSession{}, redirect, safeMessageError{message: "OIDC Issuer 发现失败"}
 	}
-	token, err := oidcOAuthConfig(r, provider, oidcSetting).Exchange(ctx, code)
+	token, err := oidcOAuthConfig(r, provider, oidcSetting).Exchange(ctx, code, newAPITokenRequestOptions()...)
 	if err != nil {
 		return model.AuthSession{}, redirect, safeMessageError{message: "OIDC 登录失败"}
 	}
@@ -290,8 +301,10 @@ func LoginWithOIDC(r *http.Request, code string, state string) (model.AuthSessio
 	user.AvatarURL = firstNonEmpty(profile.Picture, profile.AvatarURL, user.AvatarURL)
 	user.LastLoginAt = now()
 	user.UpdatedAt = now()
-	extra, _ := json.Marshal(userExtra{OIDC: profile})
-	user.Extra = string(extra)
+	extra := readUserExtra(user.Extra)
+	extra.OIDC = profile
+	extra.NewAPI = newAPITokenFromOAuth(token)
+	user.Extra = marshalUserExtra(extra)
 	user, err = repository.SaveUser(user)
 	if err != nil {
 		return model.AuthSession{}, redirect, err
@@ -672,17 +685,80 @@ func oidcRequestContext(r *http.Request, setting model.PrivateOIDCAuthSetting) (
 }
 
 func oidcOAuthConfig(r *http.Request, provider *oidc.Provider, setting model.PrivateOIDCAuthSetting) *oauth2.Config {
-	scopes := strings.Fields(setting.Scope)
+	return oidcOAuthConfigFromEndpoint(provider.Endpoint(), setting, oidcRedirectURI(r))
+}
+
+func oidcOAuthConfigFromEndpoint(endpoint oauth2.Endpoint, setting model.PrivateOIDCAuthSetting, redirectURL string) *oauth2.Config {
+	scopeText := strings.TrimSpace(setting.Scope)
+	if strings.TrimSpace(config.Cfg.NewAPIBaseURL) != "" && strings.TrimSpace(config.Cfg.NewAPILogtoAudience) != "" {
+		scopeText = strings.TrimSpace(scopeText + " " + config.Cfg.NewAPILogtoScope)
+		if !stringInSlice("offline_access", strings.Fields(scopeText)) {
+			scopeText += " offline_access"
+		}
+	}
+	scopes := strings.Fields(scopeText)
 	if !stringInSlice("openid", scopes) {
 		scopes = append([]string{"openid"}, scopes...)
 	}
 	return &oauth2.Config{
 		ClientID:     setting.ClientID,
 		ClientSecret: setting.ClientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  oidcRedirectURI(r),
+		Endpoint:     endpoint,
+		RedirectURL:  redirectURL,
 		Scopes:       scopes,
 	}
+}
+
+func newAPITokenRequestOptions() []oauth2.AuthCodeOption {
+	if strings.TrimSpace(config.Cfg.NewAPIBaseURL) == "" {
+		return nil
+	}
+	audience := strings.TrimSpace(config.Cfg.NewAPILogtoAudience)
+	if audience == "" {
+		return nil
+	}
+	return []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("resource", audience)}
+}
+
+func newAPITokenFromOAuth(token *oauth2.Token) *newAPITokenInfo {
+	if token == nil || strings.TrimSpace(config.Cfg.NewAPIBaseURL) == "" || strings.TrimSpace(token.AccessToken) == "" {
+		return nil
+	}
+	info := &newAPITokenInfo{
+		AccessToken:  strings.TrimSpace(token.AccessToken),
+		RefreshToken: strings.TrimSpace(token.RefreshToken),
+		TokenType:    token.TokenType,
+		Scope:        strings.TrimSpace(config.Cfg.NewAPILogtoScope),
+		Audience:     strings.TrimSpace(config.Cfg.NewAPILogtoAudience),
+	}
+	if !token.Expiry.IsZero() {
+		info.Expiry = token.Expiry.Format(time.RFC3339)
+	}
+	return info
+}
+
+func newAPITokenFromUser(user model.User) (newAPITokenInfo, bool) {
+	extra := readUserExtra(user.Extra)
+	if extra.NewAPI == nil {
+		return newAPITokenInfo{}, false
+	}
+	if strings.TrimSpace(extra.NewAPI.AccessToken) == "" {
+		return newAPITokenInfo{}, false
+	}
+	return *extra.NewAPI, true
+}
+
+func readUserExtra(value string) userExtra {
+	extra := userExtra{}
+	if strings.TrimSpace(value) != "" {
+		_ = json.Unmarshal([]byte(value), &extra)
+	}
+	return extra
+}
+
+func marshalUserExtra(extra userExtra) string {
+	data, _ := json.Marshal(extra)
+	return string(data)
 }
 
 func oidcRedirectURI(r *http.Request) string {

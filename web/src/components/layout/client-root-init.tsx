@@ -7,16 +7,22 @@ import { App } from "antd";
 
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useNewAPIConfig } from "@/hooks/use-new-api-config";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
     const handledConfigParams = useRef(false);
     const pathname = usePathname();
     const hydrateUser = useUserStore((state) => state.hydrateUser);
+    const token = useUserStore((state) => state.token);
+    const user = useUserStore((state) => state.user);
+    const isReady = useUserStore((state) => state.isReady);
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
     const publicSettings = useConfigStore((state) => state.publicSettings);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const setNewAPIConfig = useConfigStore((state) => state.setNewAPIConfig);
+    const { loadNewAPIConfig } = useNewAPIConfig();
     const isLoginPage = pathname === "/login" || pathname === "/admin/login";
 
     useEffect(() => {
@@ -26,6 +32,14 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (!isLoginPage) void hydrateUser();
     }, [hydrateUser, isLoginPage]);
+
+    useEffect(() => {
+        if (isLoginPage || !isReady || !token || !user || user.role === "guest") {
+            setNewAPIConfig(null);
+            return;
+        }
+        void loadNewAPIConfig();
+    }, [isLoginPage, isReady, loadNewAPIConfig, setNewAPIConfig, token, user]);
 
     useEffect(() => {
         if (handledConfigParams.current) return;

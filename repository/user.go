@@ -28,6 +28,9 @@ func ListUsers(q model.Query) ([]model.User, int64, error) {
 
 	var users []model.User
 	err = tx.Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&users).Error
+	for i := range users {
+		users[i].Extra = ""
+	}
 	return users, total, err
 }
 

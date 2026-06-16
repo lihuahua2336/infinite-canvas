@@ -23,6 +23,10 @@ type Config struct {
 	LinuxDoAuthorizeURL string `env:"LINUX_DO_AUTHORIZE_URL" envDefault:"https://connect.linux.do/oauth2/authorize"`
 	LinuxDoTokenURL     string `env:"LINUX_DO_TOKEN_URL" envDefault:"https://connect.linux.do/oauth2/token"`
 	LinuxDoUserInfoURL  string `env:"LINUX_DO_USERINFO_URL" envDefault:"https://connect.linux.do/api/user"`
+	NewAPIBaseURL       string `env:"NEW_API_BASE_URL"`
+	NewAPIPublicURL     string `env:"NEW_API_PUBLIC_URL"`
+	NewAPILogtoAudience string `env:"NEW_API_LOGTO_AUDIENCE"`
+	NewAPILogtoScope    string `env:"NEW_API_LOGTO_SCOPE" envDefault:"ecosystem:me ecosystem:models:read ecosystem:tokens:read"`
 }
 
 var Cfg Config

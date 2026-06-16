@@ -53,7 +53,7 @@ description: settings 表中 public 和 private 配置结构说明
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `availableModels` | string[] | 系统可用模型；保存设置时会自动合并所有已启用私有渠道的模型 |
+| `availableModels` | string[] | 系统可用模型；保存设置时会自动合并所有已启用私有渠道的模型。用户侧云端渠道会优先读取 New API 返回的当前用户可用模型 |
 | `modelCosts` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；未配置默认不扣除 |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
 | `defaultImageModel` | string | 默认图片模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedream`、`image`、`gpt-image` 模型 |
@@ -73,8 +73,17 @@ description: settings 表中 public 和 private 配置结构说明
 
 | 模式 | 说明 |
 | --- | --- |
-| 云端渠道 | 使用后端 `/api/v1/*` 代理接口，请求会按模型名匹配 `private.value.channels` 中的可用渠道 |
+| 云端渠道 | 默认模式。登录用户通过 Logto 获取 New API ecosystem 授权，前端读取后端 `/api/new-api/config` 返回的 New API 模型列表；实际 `/api/v1/*` 请求由后端使用 New API 返回的用户令牌转发 |
 | 本地直连 | 默认可选；`allowCustomChannel` 关闭后不可选，用户在浏览器本地配置 `baseUrl`、`apiKey` 和模型列表后直接请求模型接口 |
+
+New API 相关环境变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `NEW_API_BASE_URL` | 后端访问 New API 的 HTTP 地址，例如公网域名、宿主机 IP 或 `http://host.docker.internal:端口` |
+| `NEW_API_PUBLIC_URL` | 前端跳转到 New API 登录和令牌配置页的浏览器地址 |
+| `NEW_API_LOGTO_AUDIENCE` | New API 在 Logto 中配置的 API resource / audience |
+| `NEW_API_LOGTO_SCOPE` | 本服务 OIDC 登录时追加请求的 New API ecosystem scope |
 
 `auth` 字段：
 
@@ -158,4 +167,4 @@ description: settings 表中 public 和 private 配置结构说明
 | `internalIssuer` | string | 可选；后端容器访问 OIDC Provider 的内部地址，留空则使用 `issuer` |
 | `clientId` | string | OIDC Client ID |
 | `clientSecret` | string | OIDC Client Secret，后台返回时隐藏 |
-| `scope` | string | OIDC scope，默认 `openid profile email` |
+| `scope` | string | OIDC scope，默认 `openid profile email`；配置 New API 后后端会自动追加 `NEW_API_LOGTO_SCOPE` 和 `offline_access` |

@@ -6,6 +6,7 @@ import { persist } from "zustand/middleware";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
+import type { NewAPIConfigResponse } from "@/services/api/new-api";
 
 export type AiConfig = {
     channelMode: "remote" | "local";
@@ -49,7 +50,7 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
 export const defaultConfig: AiConfig = {
-    channelMode: "local",
+    channelMode: "remote",
     baseUrl: "https://api.openai.com",
     apiKey: "",
     model: "gpt-image-2",
@@ -90,11 +91,13 @@ type ConfigStore = {
     config: AiConfig;
     webdav: WebdavSyncConfig;
     publicSettings: AdminPublicSettings | null;
+    newAPIConfig: NewAPIConfigResponse | null;
     isPublicSettingsLoading: boolean;
     isConfigOpen: boolean;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
+    setNewAPIConfig: (config: NewAPIConfigResponse | null) => void;
     loadPublicSettings: () => Promise<void>;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
@@ -102,10 +105,21 @@ type ConfigStore = {
     clearPromptContinue: () => void;
 };
 
-function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null) {
+function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null, newAPIConfig: NewAPIConfigResponse | null) {
     const channelMode = modelChannel?.allowCustomChannel ? config.channelMode : "remote";
     if (channelMode === "local" || !modelChannel) return { ...config, channelMode };
-    const models = modelChannel.availableModels;
+    if (!newAPIConfig) {
+        return {
+            ...config,
+            channelMode,
+            models: [],
+            imageModels: [],
+            videoModels: [],
+            textModels: [],
+            audioModels: [],
+        };
+    }
+    const models = newAPIConfig.models || [];
     const textModels = filterModelsByCapability(models, "text");
     const imageModels = filterModelsByCapability(models, "image");
     const videoModels = filterModelsByCapability(models, "video");
@@ -190,6 +204,7 @@ export const useConfigStore = create<ConfigStore>()(
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
             publicSettings: null,
+            newAPIConfig: null,
             isPublicSettingsLoading: false,
             isConfigOpen: false,
             shouldPromptContinue: false,
@@ -207,6 +222,7 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+            setNewAPIConfig: (newAPIConfig) => set({ newAPIConfig }),
             loadPublicSettings: async () => {
                 if (get().isPublicSettingsLoading) return;
                 set({ isPublicSettingsLoading: true });
@@ -266,7 +282,8 @@ function normalizeModelList(models: string[]) {
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
     const modelChannel = useConfigStore((state) => state.publicSettings?.modelChannel || null);
-    return useMemo(() => resolveEffectiveConfig(config, modelChannel), [config, modelChannel]);
+    const newAPIConfig = useConfigStore((state) => state.newAPIConfig);
+    return useMemo(() => resolveEffectiveConfig(config, modelChannel, newAPIConfig), [config, modelChannel, newAPIConfig]);
 }
 
 export function buildApiUrl(baseUrl: string, path: string) {
