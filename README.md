@@ -63,18 +63,19 @@ docker compose -f docker-compose.local.yml up -d --build
 
 如需要拉取提示词，可前往:`http://localhost:3000/admin/prompts`
 
-## New API 云端渠道
+## New API 渠道
 
-默认云端渠道可通过 Logto 接入 New API。配置 `.env`：
+默认本地直连可通过 Logto 接入 New API，登录后会自动读取当前用户的模型列表和 SK，默认使用第一个 SK，也可在配置弹窗里按名称切换。配置 `.env`：
 
 ```text
 NEW_API_BASE_URL=https://new-api.example.com
 NEW_API_PUBLIC_URL=https://new-api.example.com
+NEW_API_DISPLAY_NAME=New API
 NEW_API_LOGTO_AUDIENCE=https://new-api.example.com/api
 NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read
 ```
 
-`NEW_API_BASE_URL` 填后端可访问的 HTTP 地址；如果 New API 在同一台 Docker 宿主机上，可按实际端口填 `http://host.docker.internal:端口` 或宿主机 IP。用户使用 Logto 登录本服务后，配置弹窗会读取 New API 提供的模型列表和用户令牌状态；如果 New API 还没有对应账户或令牌，会提示跳转到 New API 登录并配置。
+`NEW_API_BASE_URL` 填后端可访问的 HTTP 地址；如果 New API 在同一台 Docker 宿主机上，可按实际端口填 `http://host.docker.internal:端口` 或宿主机 IP。`NEW_API_PUBLIC_URL` 用于浏览器跳转和本地直连 Base URL 回退。`NEW_API_DISPLAY_NAME` 可把配置弹窗和错误提示里的 New API 改成自定义名称。Logto 侧需要把 `NEW_API_LOGTO_SCOPE` 对应的 resource scopes 授给登录用户。用户使用 Logto 登录本服务后，配置弹窗会读取 New API 提供的模型列表和用户令牌状态；如果 New API 还没有对应账户或令牌，会提示跳转到 New API 登录并配置。
 
 ## 效果展示
 

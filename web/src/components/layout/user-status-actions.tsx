@@ -60,11 +60,9 @@ export function UserStatusActions({ showConfig = true, hideExternalLinks: hideEx
 
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
-            {!hideExternalLinks ? (
-                <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label="文档" title="文档">
-                    <BookOpen className="size-4" />
-                </a>
-            ) : null}
+            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label="文档" title="文档">
+                <BookOpen className="size-4" />
+            </a>
             {showConfig ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label="配置" title="配置">
                     <Settings2 className="size-4" />

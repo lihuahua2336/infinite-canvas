@@ -25,6 +25,7 @@ type Config struct {
 	LinuxDoUserInfoURL  string `env:"LINUX_DO_USERINFO_URL" envDefault:"https://connect.linux.do/api/user"`
 	NewAPIBaseURL       string `env:"NEW_API_BASE_URL"`
 	NewAPIPublicURL     string `env:"NEW_API_PUBLIC_URL"`
+	NewAPIDisplayName   string `env:"NEW_API_DISPLAY_NAME" envDefault:"New API"`
 	NewAPILogtoAudience string `env:"NEW_API_LOGTO_AUDIENCE"`
 	NewAPILogtoScope    string `env:"NEW_API_LOGTO_SCOPE" envDefault:"ecosystem:me ecosystem:models:read ecosystem:tokens:read"`
 }

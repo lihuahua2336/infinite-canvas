@@ -6,10 +6,11 @@ import { persist } from "zustand/middleware";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
-import type { NewAPIConfigResponse } from "@/services/api/new-api";
+import type { NewAPIConfigResponse, NewAPITokenBrief } from "@/services/api/new-api";
 
 export type AiConfig = {
     channelMode: "remote" | "local";
+    newAPITokenId: string;
     baseUrl: string;
     apiKey: string;
     model: string;
@@ -50,7 +51,8 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
 export const defaultConfig: AiConfig = {
-    channelMode: "remote",
+    channelMode: "local",
+    newAPITokenId: "",
     baseUrl: "https://api.openai.com",
     apiKey: "",
     model: "gpt-image-2",
@@ -98,6 +100,7 @@ type ConfigStore = {
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     setNewAPIConfig: (config: NewAPIConfigResponse | null) => void;
+    applyNewAPIToken: (config: NewAPIConfigResponse, tokenId?: string) => void;
     loadPublicSettings: () => Promise<void>;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
@@ -106,7 +109,8 @@ type ConfigStore = {
 };
 
 function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null, newAPIConfig: NewAPIConfigResponse | null) {
-    const channelMode = modelChannel?.allowCustomChannel ? config.channelMode : "remote";
+    const allowCustomChannel = modelChannel?.allowCustomChannel !== false;
+    const channelMode = allowCustomChannel ? config.channelMode : "remote";
     if (channelMode === "local" || !modelChannel) return { ...config, channelMode };
     if (!newAPIConfig) {
         return {
@@ -143,6 +147,42 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
         textModel: textModels.includes(config.textModel) ? config.textModel : fallbackTextModel || fallbackModel,
         audioModel: audioModels.includes(config.audioModel) ? config.audioModel : fallbackAudioModel,
         systemPrompt: modelChannel.systemPrompt,
+    };
+}
+
+function resolveNewAPIToken(config: AiConfig, tokens: NewAPITokenBrief[], tokenId?: string) {
+    const requestedId = tokenId || config.newAPITokenId;
+    return tokens.find((token) => String(token.tokenId) === requestedId) || tokens[0] || null;
+}
+
+function configWithNewAPIToken(config: AiConfig, newAPIConfig: NewAPIConfigResponse, tokenId?: string) {
+    if (!tokenId && !config.newAPITokenId && config.apiKey.trim()) return null;
+    const token = resolveNewAPIToken(config, newAPIConfig.tokens, tokenId);
+    if (!token) return null;
+    const models = normalizeModelList(newAPIConfig.models || []);
+    const imageModels = filterModelsByCapability(models, "image");
+    const videoModels = filterModelsByCapability(models, "video");
+    const textModels = filterModelsByCapability(models, "text");
+    const audioModels = filterModelsByCapability(models, "audio");
+    const baseUrl = token.baseUrl.trim() || config.baseUrl;
+    const apiKey = token.apiKey.trim();
+    if (!apiKey) return null;
+    return {
+        ...config,
+        channelMode: "local" as const,
+        newAPITokenId: String(token.tokenId),
+        baseUrl,
+        apiKey,
+        models,
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+        imageModel: imageModels.includes(config.imageModel) ? config.imageModel : imageModels[0] || config.imageModel,
+        videoModel: videoModels.includes(config.videoModel) ? config.videoModel : videoModels[0] || config.videoModel,
+        textModel: textModels.includes(config.textModel) ? config.textModel : textModels[0] || config.textModel,
+        audioModel: audioModels.includes(config.audioModel) ? config.audioModel : audioModels[0] || config.audioModel,
+        model: textModels.includes(config.model) ? config.model : textModels[0] || config.model,
     };
 }
 
@@ -222,12 +262,37 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
-            setNewAPIConfig: (newAPIConfig) => set({ newAPIConfig }),
+            setNewAPIConfig: (newAPIConfig) =>
+                set((state) => {
+                    if (!newAPIConfig && state.config.newAPITokenId) {
+                        return {
+                            newAPIConfig,
+                            config: { ...state.config, newAPITokenId: "", apiKey: "", models: [], imageModels: [], videoModels: [], textModels: [], audioModels: [] },
+                        };
+                    }
+                    const nextConfig = state.publicSettings?.modelChannel.allowCustomChannel !== false && state.config.channelMode === "local" && newAPIConfig ? configWithNewAPIToken(state.config, newAPIConfig) : null;
+                    return {
+                        newAPIConfig,
+                        ...(nextConfig ? { config: nextConfig } : {}),
+                    };
+                }),
+            applyNewAPIToken: (newAPIConfig, tokenId) =>
+                set((state) => {
+                    const nextConfig = state.publicSettings?.modelChannel.allowCustomChannel !== false ? configWithNewAPIToken(state.config, newAPIConfig, tokenId) : null;
+                    return nextConfig ? { config: nextConfig } : {};
+                }),
             loadPublicSettings: async () => {
                 if (get().isPublicSettingsLoading) return;
                 set({ isPublicSettingsLoading: true });
                 try {
-                    set({ publicSettings: await apiGet<AdminPublicSettings>("/api/settings") });
+                    const publicSettings = await apiGet<AdminPublicSettings>("/api/settings");
+                    set((state) => {
+                        const nextConfig = publicSettings.modelChannel.allowCustomChannel !== false && state.config.channelMode === "local" && state.newAPIConfig ? configWithNewAPIToken(state.config, state.newAPIConfig) : null;
+                        return {
+                            publicSettings,
+                            ...(nextConfig ? { config: nextConfig } : {}),
+                        };
+                    });
                 } finally {
                     set({ isPublicSettingsLoading: false });
                 }
@@ -250,7 +315,8 @@ export const useConfigStore = create<ConfigStore>()(
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
                     config: {
                         ...config,
-                        channelMode: config.channelMode || "remote",
+                        channelMode: config.channelMode === "remote" && !config.apiKey.trim() && !config.newAPITokenId ? defaultConfig.channelMode : config.channelMode || defaultConfig.channelMode,
+                        newAPITokenId: config.newAPITokenId || "",
                         imageModel: config.imageModel || config.model,
                         videoModel: config.videoModel || "grok-imagine-video",
                         textModel: config.textModel || config.model,

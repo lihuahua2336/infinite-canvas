@@ -10,3 +10,4 @@ data/
 .idea
 docker-compose.local-3010.yml
 Dockerfile.local-3010
+output

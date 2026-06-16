@@ -26,6 +26,7 @@ export function useNewAPIConfig() {
         } catch (error) {
             const fallback = {
                 configured: false,
+                displayName: "New API",
                 loginUrl: "",
                 message: error instanceof Error ? error.message : "读取 New API 配置失败",
                 models: [],

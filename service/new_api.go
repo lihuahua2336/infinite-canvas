@@ -19,17 +19,19 @@ import (
 )
 
 type NewAPIConfig struct {
-	Configured bool               `json:"configured"`
-	LoginURL   string             `json:"loginUrl"`
-	Message    string             `json:"message"`
-	Models     []string           `json:"models"`
-	Tokens     []NewAPITokenBrief `json:"tokens"`
+	Configured   bool               `json:"configured"`
+	DisplayName string             `json:"displayName"`
+	LoginURL    string             `json:"loginUrl"`
+	Message     string             `json:"message"`
+	Models      []string           `json:"models"`
+	Tokens      []NewAPITokenBrief `json:"tokens"`
 }
 
 type NewAPITokenBrief struct {
 	TokenID   int    `json:"tokenId"`
 	TokenName string `json:"tokenName"`
 	BaseURL   string `json:"baseUrl"`
+	APIKey    string `json:"apiKey"`
 	Group     string `json:"group"`
 }
 
@@ -44,9 +46,10 @@ type newAPIEcosystemToken struct {
 var newAPIHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 func UserNewAPIConfig(userID string) (NewAPIConfig, error) {
-	result := NewAPIConfig{LoginURL: NewAPISetupURL()}
+	displayName := NewAPIDisplayName()
+	result := NewAPIConfig{DisplayName: displayName, LoginURL: NewAPISetupURL(), Models: []string{}, Tokens: []NewAPITokenBrief{}}
 	if strings.TrimSpace(config.Cfg.NewAPIBaseURL) == "" {
-		result.Message = "New API 地址未配置，请在 .env 中设置 NEW_API_BASE_URL"
+		result.Message = displayName + " 地址未配置，请在 .env 中设置 NEW_API_BASE_URL"
 		return result, nil
 	}
 	accessToken, ok, err := userNewAPIAccessToken(userID)
@@ -54,11 +57,11 @@ func UserNewAPIConfig(userID string) (NewAPIConfig, error) {
 		return result, err
 	}
 	if !ok {
-		result.Message = "请使用 Logto 重新登录本服务，然后前往 New API 登录 Logto 并创建令牌"
+		result.Message = "请使用 Logto 重新登录本服务，然后前往 " + displayName + " 登录 Logto 并创建令牌"
 		return result, nil
 	}
 	if err := newAPIGet(accessToken, "/api/ecosystem/me", nil); err != nil {
-		result.Message = "无法确认 New API 账户，请前往 New API 使用 Logto 登录并完成配置"
+		result.Message = "无法确认 " + displayName + " 账户，请前往 " + displayName + " 使用 Logto 登录并完成配置"
 		return result, nil
 	}
 	models, err := fetchNewAPIModels(accessToken)
@@ -75,25 +78,26 @@ func UserNewAPIConfig(userID string) (NewAPIConfig, error) {
 	result.Tokens = publicNewAPITokens(tokens)
 	result.Configured = len(result.Models) > 0 && len(result.Tokens) > 0
 	if len(result.Models) == 0 {
-		result.Message = "New API 当前没有可用模型，请先在 New API 后台配置模型渠道"
+		result.Message = displayName + " 当前没有可用模型，请先在 " + displayName + " 后台配置模型渠道"
 	} else if len(result.Tokens) == 0 {
-		result.Message = "New API 当前没有可用令牌，请前往 New API 登录后创建令牌"
+		result.Message = displayName + " 当前没有可用令牌，请前往 " + displayName + " 登录后创建令牌"
 	} else {
-		result.Message = "New API 已连接"
+		result.Message = displayName + " 已连接"
 	}
 	return result, nil
 }
 
 func NewAPIModelChannel(userID string, modelName string) (model.ModelChannel, error) {
+	displayName := NewAPIDisplayName()
 	if strings.TrimSpace(config.Cfg.NewAPIBaseURL) == "" {
-		return model.ModelChannel{}, safeMessageError{message: "New API 地址未配置，请在 .env 中设置 NEW_API_BASE_URL"}
+		return model.ModelChannel{}, safeMessageError{message: displayName + " 地址未配置，请在 .env 中设置 NEW_API_BASE_URL"}
 	}
 	accessToken, ok, err := userNewAPIAccessToken(userID)
 	if err != nil {
 		return model.ModelChannel{}, err
 	}
 	if !ok {
-		return model.ModelChannel{}, safeMessageError{message: "请使用 Logto 重新登录本服务，然后前往 New API 登录 Logto 并创建令牌"}
+		return model.ModelChannel{}, safeMessageError{message: "请使用 Logto 重新登录本服务，然后前往 " + displayName + " 登录 Logto 并创建令牌"}
 	}
 	if strings.TrimSpace(modelName) == "" {
 		modelName = "gpt-image-2"
@@ -103,7 +107,7 @@ func NewAPIModelChannel(userID string, modelName string) (model.ModelChannel, er
 		return model.ModelChannel{}, err
 	}
 	if len(models) > 0 && !stringInSlice(modelName, models) {
-		return model.ModelChannel{}, safeMessageError{message: "New API 当前用户不可用该模型，请刷新云端渠道模型列表"}
+		return model.ModelChannel{}, safeMessageError{message: displayName + " 当前用户不可用该模型，请刷新云端渠道模型列表"}
 	}
 	tokens, err := fetchNewAPITokens(accessToken)
 	if err != nil {
@@ -111,17 +115,25 @@ func NewAPIModelChannel(userID string, modelName string) (model.ModelChannel, er
 	}
 	token, ok := firstUsableNewAPIToken(tokens)
 	if !ok {
-		return model.ModelChannel{}, safeMessageError{message: "New API 当前没有可用令牌，请前往 New API 创建令牌"}
+		return model.ModelChannel{}, safeMessageError{message: displayName + " 当前没有可用令牌，请前往 " + displayName + " 创建令牌"}
 	}
 	return model.ModelChannel{
 		Protocol: "openai",
-		Name:     "New API",
+		Name:     displayName,
 		BaseURL:  strings.TrimSpace(config.Cfg.NewAPIBaseURL),
 		APIKey:   token.APIKey,
 		Models:   []string{modelName},
 		Weight:   1,
 		Enabled:  true,
 	}, nil
+}
+
+func NewAPIDisplayName() string {
+	name := strings.TrimSpace(config.Cfg.NewAPIDisplayName)
+	if name == "" {
+		return "New API"
+	}
+	return name
 }
 
 func NewAPISetupURL() string {
@@ -243,12 +255,12 @@ func newAPIGet(accessToken string, path string, target any) error {
 	request.Header.Set("Authorization", "Bearer "+accessToken)
 	response, err := newAPIHTTPClient.Do(request)
 	if err != nil {
-		return safeMessageError{message: "New API 连接失败，请检查 NEW_API_BASE_URL"}
+		return safeMessageError{message: NewAPIDisplayName() + " 连接失败，请检查 NEW_API_BASE_URL"}
 	}
 	defer response.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if response.StatusCode >= http.StatusBadRequest {
-		return safeMessageError{message: "New API 请求失败：" + http.StatusText(response.StatusCode)}
+		return safeMessageError{message: NewAPIDisplayName() + " 请求失败：" + http.StatusText(response.StatusCode)}
 	}
 	payload := struct {
 		Success bool            `json:"success"`
@@ -256,12 +268,12 @@ func newAPIGet(accessToken string, path string, target any) error {
 		Data    json.RawMessage `json:"data"`
 	}{}
 	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&payload); err != nil {
-		return safeMessageError{message: "New API 返回异常"}
+		return safeMessageError{message: NewAPIDisplayName() + " 返回异常"}
 	}
 	if !payload.Success {
 		message := strings.TrimSpace(payload.Message)
 		if message == "" {
-			message = "New API 请求失败"
+			message = NewAPIDisplayName() + " 请求失败"
 		}
 		return safeMessageError{message: message}
 	}
@@ -269,7 +281,7 @@ func newAPIGet(accessToken string, path string, target any) error {
 		return nil
 	}
 	if err := json.Unmarshal(payload.Data, target); err != nil {
-		return safeMessageError{message: "New API 返回数据格式异常"}
+		return safeMessageError{message: NewAPIDisplayName() + " 返回数据格式异常"}
 	}
 	return nil
 }
@@ -280,10 +292,12 @@ func publicNewAPITokens(tokens []newAPIEcosystemToken) []NewAPITokenBrief {
 		if strings.TrimSpace(token.APIKey) == "" {
 			continue
 		}
+		baseURL := firstNonEmpty(token.BaseURL, config.Cfg.NewAPIPublicURL, config.Cfg.NewAPIBaseURL)
 		result = append(result, NewAPITokenBrief{
 			TokenID:   token.TokenID,
 			TokenName: token.TokenName,
-			BaseURL:   token.BaseURL,
+			BaseURL:   baseURL,
+			APIKey:    token.APIKey,
 			Group:     token.Group,
 		})
 	}

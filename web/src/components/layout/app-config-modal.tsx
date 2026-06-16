@@ -65,6 +65,7 @@ export function AppConfigModal() {
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
+    const applyNewAPIToken = useConfigStore((state) => state.applyNewAPIToken);
     const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
@@ -72,18 +73,21 @@ export function AppConfigModal() {
     const publicSettings = useConfigStore((state) => state.publicSettings);
     const effectiveConfig = useEffectiveConfig();
     const modelChannel = publicSettings?.modelChannel;
-    const allowCustomChannel = modelChannel?.allowCustomChannel === true;
+    const allowCustomChannel = modelChannel?.allowCustomChannel !== false;
     const effectiveMode = allowCustomChannel ? config.channelMode : "remote";
     const modelConfig = effectiveMode === "remote" ? effectiveConfig : config;
     const modelOptions = config.models.map((model) => ({ label: model, value: model }));
     const webdavReady = Boolean(webdav.url.trim());
     const { newAPIConfig, loadNewAPIConfig, loading: loadingNewAPIConfig } = useNewAPIConfig();
-    const remoteModelCount = newAPIConfig?.models.length || effectiveConfig.models.length || 0;
-    const remoteTokenCount = newAPIConfig?.tokens.length || 0;
+    const serviceDisplayName = newAPIConfig?.displayName || "New API";
+    const newAPITokens = newAPIConfig?.tokens || [];
+    const newAPITokenOptions = newAPITokens.map((token) => ({ label: token.tokenName || `令牌 ${token.tokenId}`, value: String(token.tokenId) }));
+    const remoteModelCount = (Array.isArray(newAPIConfig?.models) ? newAPIConfig.models.length : 0) || effectiveConfig.models.length || 0;
+    const remoteTokenCount = Array.isArray(newAPIConfig?.tokens) ? newAPIConfig.tokens.length : 0;
 
     useEffect(() => {
-        if (isConfigOpen && effectiveMode === "remote") void loadNewAPIConfig();
-    }, [effectiveMode, isConfigOpen, loadNewAPIConfig]);
+        if (isConfigOpen) void loadNewAPIConfig();
+    }, [isConfigOpen, loadNewAPIConfig]);
 
     const finishConfig = () => {
         setConfigDialogOpen(false);
@@ -99,8 +103,12 @@ export function AppConfigModal() {
             await loadNewAPIConfig();
             return;
         }
+        if (config.newAPITokenId) {
+            await loadNewAPIConfig();
+            return;
+        }
         if (!config.baseUrl.trim() || !config.apiKey.trim()) {
-            message.error("请先填写 Base URL 和 API Key");
+            message.error(`请先填写 Base URL 和 API Key，或选择 ${serviceDisplayName} SK`);
             return;
         }
         setLoadingModels(true);
@@ -218,20 +226,62 @@ export function AppConfigModal() {
                                     value={effectiveMode}
                                     onChange={(value) => updateConfig("channelMode", value as AiConfig["channelMode"])}
                                     options={[
-                                        { label: "云端渠道", value: "remote" },
                                         { label: "本地直连", value: "local" },
+                                        { label: "云端渠道", value: "remote" },
                                     ]}
                                 />
                             </Form.Item>
                         ) : null}
                         {effectiveMode === "local" ? (
                             <>
+                                <div className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-medium text-stone-900 dark:text-stone-100">{serviceDisplayName} SK</div>
+                                            <div className="mt-1 text-xs text-stone-500">登录后自动读取 {serviceDisplayName} 令牌，默认使用第一个，也可以按名称切换。</div>
+                                            {newAPIConfig?.message ? <div className="mt-1 text-xs text-stone-500">{newAPIConfig.message}</div> : null}
+                                        </div>
+                                        <div className="flex shrink-0 items-center gap-2">
+                                            <Button size="small" loading={loadingNewAPIConfig} onClick={() => void loadNewAPIConfig()}>
+                                                刷新
+                                            </Button>
+                                            {newAPIConfig?.loginUrl ? (
+                                                <Button size="small" href={newAPIConfig.loginUrl} target="_blank" rel="noopener noreferrer">
+                                                    前往 {serviceDisplayName} 配置
+                                                </Button>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                    <Select
+                                        className="w-full"
+                                        placeholder={loadingNewAPIConfig ? `正在读取 ${serviceDisplayName} SK` : `请选择 ${serviceDisplayName} SK`}
+                                        value={config.newAPITokenId || undefined}
+                                        options={newAPITokenOptions}
+                                        loading={loadingNewAPIConfig}
+                                        disabled={!newAPITokenOptions.length}
+                                        onChange={(tokenId) => {
+                                            if (newAPIConfig) applyNewAPIToken(newAPIConfig, tokenId);
+                                        }}
+                                    />
+                                </div>
                                 <div className="grid gap-4 md:grid-cols-2">
                                     <Form.Item label="Base URL" className="mb-4">
-                                        <Input value={config.baseUrl} onChange={(event) => updateConfig("baseUrl", event.target.value)} />
+                                        <Input
+                                            value={config.baseUrl}
+                                            onChange={(event) => {
+                                                updateConfig("newAPITokenId", "");
+                                                updateConfig("baseUrl", event.target.value);
+                                            }}
+                                        />
                                     </Form.Item>
                                     <Form.Item label="API Key" className="mb-4">
-                                        <Input.Password value={config.apiKey} onChange={(event) => updateConfig("apiKey", event.target.value)} />
+                                        <Input.Password
+                                            value={config.apiKey}
+                                            onChange={(event) => {
+                                                updateConfig("newAPITokenId", "");
+                                                updateConfig("apiKey", event.target.value);
+                                            }}
+                                        />
                                     </Form.Item>
                                 </div>
                                 <div className="mb-5 flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-800">
@@ -250,7 +300,7 @@ export function AppConfigModal() {
                                     <div className="min-w-0">
                                         <div className="font-medium text-stone-900 dark:text-stone-100">云端渠道</div>
                                         <div className="mt-1">
-                                            通过 Logto 读取 New API 提供的模型和令牌，当前可用 {remoteModelCount} 个模型、{remoteTokenCount} 个令牌。
+                                            通过 Logto 读取 {serviceDisplayName} 提供的模型和令牌，当前可用 {remoteModelCount} 个模型、{remoteTokenCount} 个令牌。
                                         </div>
                                         {newAPIConfig?.message ? <div className="mt-1 text-xs text-stone-500">{newAPIConfig.message}</div> : null}
                                     </div>
@@ -260,7 +310,7 @@ export function AppConfigModal() {
                                         </Button>
                                         {newAPIConfig?.loginUrl ? (
                                             <Button size="small" href={newAPIConfig.loginUrl} target="_blank" rel="noopener noreferrer">
-                                                前往 New API 配置
+                                                前往 {serviceDisplayName} 配置
                                             </Button>
                                         ) : null}
                                     </div>

@@ -118,7 +118,7 @@ description: 当前后端主要数据表与字段说明
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `availableModels` | string[] | 系统可用模型列表；用户侧云端渠道优先使用 New API 按当前登录用户返回的模型列表 |
+| `availableModels` | string[] | 系统可用模型列表；用户侧本地直连和云端渠道优先使用 New API 按当前登录用户返回的模型列表 |
 | `modelCosts` | object[] | 模型算力点配置 |
 | `defaultModel` | string | 默认模型 |
 | `defaultImageModel` | string | 默认图片模型 |
@@ -198,7 +198,7 @@ description: 当前后端主要数据表与字段说明
 | `clientSecret` | string | OIDC Client Secret，后台返回时隐藏 |
 | `scope` | string | OIDC scope，默认 `openid profile email`；配置 New API 后会自动追加 New API ecosystem scope 和 `offline_access` |
 
-用户侧云端渠道请求模型时，后端会读取 `.env` 中的 `NEW_API_BASE_URL`，用用户 OIDC 登录时取得的 Logto resource token 调用 New API `/api/ecosystem/models` 和 `/api/ecosystem/tokens`，再使用 New API 返回的用户令牌转发 `/api/v1/*` 请求。后台私有渠道仍保留给后台管理和兼容配置使用。
+用户侧默认使用本地直连：后端会读取 `.env` 中的 `NEW_API_BASE_URL`，用用户 OIDC 登录时取得的 Logto resource token 调用 New API `/api/ecosystem/models` 和 `/api/ecosystem/tokens`，再把当前用户可用模型、令牌名称、`baseUrl` 和 `apiKey` 返回给前端，前端默认选择第一个令牌并由浏览器直接请求 New API。用户手动切到云端渠道时，后端仍会使用 New API 返回的用户令牌转发 `/api/v1/*` 请求。后台私有渠道保留给后台管理和兼容配置使用。
 
 ### credit_logs
 
