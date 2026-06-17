@@ -67,6 +67,7 @@ docker run --rm -p 3000:3000 infinite-canvas
 如果使用 New API，部署时配置：
 
 ```text
+APP_PUBLIC_URL=
 LOGTO_ISSUER=
 LOGTO_INTERNAL_ISSUER=
 LOGTO_CLIENT_ID=

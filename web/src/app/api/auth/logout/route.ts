@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { clearSessionCookie } from "@/lib/server-auth";
+import { appURL, clearSessionCookie } from "@/lib/server-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export async function POST() {
 }
 
 export async function GET(request: NextRequest) {
-    const response = NextResponse.redirect(new URL("/login", request.url));
+    const response = NextResponse.redirect(appURL(request, "/login"));
     clearSessionCookie(response);
     return response;
 }

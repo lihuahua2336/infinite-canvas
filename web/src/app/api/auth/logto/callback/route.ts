@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { clearLogtoPendingCookie, exchangeLogtoCode, getAuthConfig, getOIDCDiscovery, readLogtoPendingCookie, safeRedirectPath, sessionFromLogtoToken, setSessionCookie } from "@/lib/server-auth";
+import { appURL, clearLogtoPendingCookie, exchangeLogtoCode, getAuthConfig, getOIDCDiscovery, readLogtoPendingCookie, safeRedirectPath, sessionFromLogtoToken, setSessionCookie } from "@/lib/server-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const pending = readLogtoPendingCookie(request);
     const redirect = safeRedirectPath(pending?.redirect);
     const responseWithError = (message: string) => {
-        const response = NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(message)}`, request.url));
+        const response = NextResponse.redirect(appURL(request, `/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(message)}`));
         clearLogtoPendingCookie(response);
         return response;
     };
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         const discovery = await getOIDCDiscovery(config.issuer);
         const token = await exchangeLogtoCode(request, discovery, code, pending.codeVerifier);
         const session = await sessionFromLogtoToken(discovery, token, pending.nonce);
-        const response = NextResponse.redirect(new URL(redirect, request.url));
+        const response = NextResponse.redirect(appURL(request, redirect));
         setSessionCookie(response, session, request);
         clearLogtoPendingCookie(response);
         return response;

@@ -97,8 +97,11 @@ export function safeRedirectPath(value: string | null | undefined) {
 }
 
 export function requestOrigin(request: NextRequest) {
+    const publicUrl = (process.env.APP_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+    if (publicUrl) return publicUrl;
     const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
-    const host = forwardedHost || request.headers.get("host") || request.nextUrl.host;
+    const requestHost = request.headers.get("host") || request.nextUrl.host;
+    const host = [forwardedHost, requestHost, request.nextUrl.host].find((value) => value && !isPrivateListenHost(value)) || request.nextUrl.host;
     const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
     const proto = forwardedProto || request.nextUrl.protocol.replace(":", "") || "http";
     return `${proto}://${host}`;
@@ -106,6 +109,10 @@ export function requestOrigin(request: NextRequest) {
 
 export function logtoRedirectUri(request: NextRequest) {
     return `${requestOrigin(request)}/api/auth/logto/callback`;
+}
+
+export function appURL(request: NextRequest, path: string) {
+    return new URL(path, requestOrigin(request));
 }
 
 export async function getOIDCDiscovery(issuer: string) {
@@ -422,6 +429,13 @@ function firstNonEmpty(...values: Array<string | undefined>) {
 
 function trimTrailingSlash(value: string) {
     return value.trim().replace(/\/+$/, "");
+}
+
+function isPrivateListenHost(value: string) {
+    const text = value.trim();
+    const bracketEnd = text.indexOf("]");
+    const hostname = text.startsWith("[") && bracketEnd > 0 ? text.slice(1, bracketEnd) : text.split(":")[0];
+    return hostname === "0.0.0.0" || hostname === "::";
 }
 
 function serverLogtoURL(url: string) {

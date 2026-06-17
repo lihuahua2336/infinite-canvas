@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { buildLogtoScopes, codeChallenge, getAuthConfig, getOIDCDiscovery, logtoRedirectUri, newAPIAudience, randomToken, safeRedirectPath, setLogtoPendingCookie } from "@/lib/server-auth";
+import { appURL, buildLogtoScopes, codeChallenge, getAuthConfig, getOIDCDiscovery, logtoRedirectUri, newAPIAudience, randomToken, safeRedirectPath, setLogtoPendingCookie } from "@/lib/server-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
     const config = getAuthConfig();
     const redirect = safeRedirectPath(request.nextUrl.searchParams.get("redirect"));
-    if (config.missing.length) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(`${config.missing.join("、")} 未配置`)}`, request.url));
+    if (config.missing.length) return NextResponse.redirect(appURL(request, `/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(`${config.missing.join("、")} 未配置`)}`));
 
     try {
         const discovery = await getOIDCDiscovery(config.issuer);
@@ -32,6 +32,6 @@ export async function GET(request: NextRequest) {
         return response;
     } catch (error) {
         const message = error instanceof Error ? error.message : "Logto 登录初始化失败";
-        return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(message)}`, request.url));
+        return NextResponse.redirect(appURL(request, `/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(message)}`));
     }
 }

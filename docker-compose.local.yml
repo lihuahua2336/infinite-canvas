@@ -4,6 +4,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
     ports:
-      - "3000:3000"
+      - "3003:3000"
     restart: unless-stopped

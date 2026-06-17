@@ -4,6 +4,7 @@
   "defaultOpen": true,
   "pages": [
     "local-development",
+    "logto-new-api-oidc",
     "canvas-data-structure"
   ]
 }
