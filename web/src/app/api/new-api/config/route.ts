@@ -65,12 +65,12 @@ export async function GET(request: NextRequest) {
         result.configured = result.models.length > 0 && result.tokens.length > 0;
         result.message = result.configured ? `${displayName} 已连接` : result.models.length ? `${displayName} 当前没有可用令牌，请前往 ${displayName} 登录后创建令牌` : `${displayName} 当前没有可用模型，请先在后台配置模型渠道`;
         const response = NextResponse.json(result);
-        if (refreshed.refreshed) setSessionCookie(response, refreshed.session);
+        if (refreshed.refreshed) setSessionCookie(response, refreshed.session, request);
         return response;
     } catch (error) {
         result.message = error instanceof Error ? error.message : `${displayName} 读取失败`;
         const response = NextResponse.json(result);
-        if (refreshed.refreshed) setSessionCookie(response, refreshed.session);
+        if (refreshed.refreshed) setSessionCookie(response, refreshed.session, request);
         return response;
     }
 }

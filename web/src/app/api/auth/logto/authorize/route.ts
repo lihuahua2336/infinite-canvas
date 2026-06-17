@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
         if (audience) url.searchParams.set("resource", audience);
 
         const response = NextResponse.redirect(url);
-        setLogtoPendingCookie(response, { state, nonce, codeVerifier, redirect, createdAt: Date.now() });
+        setLogtoPendingCookie(response, { state, nonce, codeVerifier, redirect, createdAt: Date.now() }, request);
         return response;
     } catch (error) {
         const message = error instanceof Error ? error.message : "Logto 登录初始化失败";

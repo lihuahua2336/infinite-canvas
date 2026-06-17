@@ -68,10 +68,12 @@ docker run --rm -p 3000:3000 infinite-canvas
 
 ```text
 LOGTO_ISSUER=
+LOGTO_INTERNAL_ISSUER=
 LOGTO_CLIENT_ID=
 LOGTO_CLIENT_SECRET=
 LOGTO_SCOPE=openid profile email
 SESSION_SECRET=
+COOKIE_SECURE=
 NEW_API_BASE_URL=
 NEW_API_PUBLIC_URL=
 NEW_API_DISPLAY_NAME=New API
@@ -79,7 +81,7 @@ NEW_API_LOGTO_AUDIENCE=
 NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read
 ```
 
-登录后打开“配置与用户偏好”，会通过 Next.js route 读取 New API 的模型和令牌，并把第一个可用令牌自动写成本地渠道；也可以在设置里切换令牌，或点击“前往 New API 配置”打开 `NEW_API_PUBLIC_URL/keys`。
+登录后打开“配置与用户偏好”，会通过 Next.js route 读取 New API 的模型和令牌，并把第一个可用令牌自动写成本地渠道；也可以在设置里切换令牌，或点击“前往 New API 配置”打开 `NEW_API_PUBLIC_URL/keys`。Docker bridge 网络中如果服务端不能直接访问 `LOGTO_ISSUER`，可把 `LOGTO_INTERNAL_ISSUER` 设置为容器内可访问的 Logto 地址。
 
 原来的 URL 参数导入仍保留。如果只想从 New API 跳转填入本地直连配置，可在 `系统设置 -> 聊天方式 -> 添加聊天设置` 中填入：
 

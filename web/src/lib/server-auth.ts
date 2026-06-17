@@ -75,6 +75,7 @@ const jwksCache = new Map<string, { keys: JsonWebKey[]; expiresAt: number }>();
 
 export function getAuthConfig() {
     const issuer = trimTrailingSlash(process.env.LOGTO_ISSUER || "");
+    const internalIssuer = trimTrailingSlash(process.env.LOGTO_INTERNAL_ISSUER || "");
     const clientId = (process.env.LOGTO_CLIENT_ID || "").trim();
     const clientSecret = (process.env.LOGTO_CLIENT_SECRET || "").trim();
     const sessionSecret = (process.env.SESSION_SECRET || "").trim();
@@ -86,7 +87,7 @@ export function getAuthConfig() {
     ]
         .filter(([, value]) => !value)
         .map(([key]) => key);
-    return { issuer, clientId, clientSecret, sessionSecret, missing };
+    return { issuer, internalIssuer, clientId, clientSecret, sessionSecret, missing };
 }
 
 export function safeRedirectPath(value: string | null | undefined) {
@@ -109,9 +110,9 @@ export function logtoRedirectUri(request: NextRequest) {
 
 export async function getOIDCDiscovery(issuer: string) {
     if (discoveryCache && discoveryCache.issuer === issuer && discoveryCache.expiresAt > Date.now()) return discoveryCache.value;
-    const response = await fetch(`${trimTrailingSlash(issuer)}/.well-known/openid-configuration`, { cache: "no-store" });
+    const response = await fetch(serverLogtoURL(`${trimTrailingSlash(issuer)}/.well-known/openid-configuration`), { cache: "no-store" });
     if (!response.ok) throw new Error("Logto 发现配置读取失败");
-    const value = (await response.json()) as OIDCDiscovery;
+    const value = publicLogtoDiscovery((await response.json()) as OIDCDiscovery);
     if (!value.authorization_endpoint || !value.token_endpoint || !value.jwks_uri) throw new Error("Logto 发现配置不完整");
     discoveryCache = { issuer, value, expiresAt: Date.now() + 1000 * 60 * 10 };
     return value;
@@ -140,9 +141,9 @@ export function codeChallenge(verifier: string) {
     return crypto.createHash("sha256").update(verifier).digest("base64url");
 }
 
-export function setLogtoPendingCookie(response: NextResponse, pending: LogtoPendingAuth) {
+export function setLogtoPendingCookie(response: NextResponse, pending: LogtoPendingAuth, request?: NextRequest) {
     response.cookies.set(LOGTO_PENDING_COOKIE, encryptJSON(pending), {
-        ...cookieOptions(),
+        ...cookieOptions(request),
         maxAge: PENDING_MAX_AGE,
     });
 }
@@ -165,17 +166,17 @@ export function readSession(request: NextRequest) {
     return session;
 }
 
-export function setSessionCookie(response: NextResponse, session: AuthSession) {
+export function setSessionCookie(response: NextResponse, session: AuthSession, request?: NextRequest) {
     const encrypted = encryptJSON({ ...session, updatedAt: Date.now() });
     clearSessionCookie(response);
     if (encrypted.length <= COOKIE_CHUNK_SIZE) {
-        response.cookies.set(SESSION_COOKIE, encrypted, { ...cookieOptions(), maxAge: SESSION_MAX_AGE });
+        response.cookies.set(SESSION_COOKIE, encrypted, { ...cookieOptions(request), maxAge: SESSION_MAX_AGE });
         return;
     }
     const chunks = encrypted.match(new RegExp(`.{1,${COOKIE_CHUNK_SIZE}}`, "g")) || [];
-    response.cookies.set(SESSION_COOKIE, `chunks:${chunks.length}`, { ...cookieOptions(), maxAge: SESSION_MAX_AGE });
+    response.cookies.set(SESSION_COOKIE, `chunks:${chunks.length}`, { ...cookieOptions(request), maxAge: SESSION_MAX_AGE });
     chunks.forEach((chunk, index) => {
-        response.cookies.set(`${SESSION_COOKIE}.${index}`, chunk, { ...cookieOptions(), maxAge: SESSION_MAX_AGE });
+        response.cookies.set(`${SESSION_COOKIE}.${index}`, chunk, { ...cookieOptions(request), maxAge: SESSION_MAX_AGE });
     });
 }
 
@@ -264,7 +265,7 @@ function tokenFromResponse(token: OIDCTokenResponse, fallbackRefreshToken = ""):
 }
 
 async function fetchOIDCToken(endpoint: string, body: URLSearchParams) {
-    const response = await fetch(endpoint, {
+    const response = await fetch(serverLogtoURL(endpoint), {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
@@ -301,7 +302,7 @@ async function findJWK(jwksUri: string, kid?: string) {
     const cached = jwksCache.get(jwksUri);
     let keys = cached && cached.expiresAt > Date.now() ? cached.keys : [];
     if (!keys.length) {
-        const response = await fetch(jwksUri, { cache: "no-store" });
+        const response = await fetch(serverLogtoURL(jwksUri), { cache: "no-store" });
         if (!response.ok) throw new Error("Logto JWKS 读取失败");
         const payload = (await response.json()) as { keys?: JsonWebKey[] };
         keys = payload.keys || [];
@@ -331,7 +332,7 @@ function verifyJWTSignature(alg: string, jwk: JsonWebKey, input: string, signatu
 async function fetchUserInfo(endpoint: string | undefined, accessToken: string) {
     if (!endpoint) return {};
     try {
-        const response = await fetch(endpoint, {
+        const response = await fetch(serverLogtoURL(endpoint), {
             headers: { Authorization: `Bearer ${accessToken}` },
             cache: "no-store",
         });
@@ -402,11 +403,11 @@ function readChunkedCookie(request: NextRequest, name: string) {
     return result;
 }
 
-function cookieOptions() {
+function cookieOptions(request?: NextRequest) {
     return {
         httpOnly: true,
         sameSite: "lax" as const,
-        secure: process.env.NODE_ENV === "production",
+        secure: request ? requestOrigin(request).startsWith("https://") : process.env.COOKIE_SECURE === "true",
         path: "/",
     };
 }
@@ -421,4 +422,24 @@ function firstNonEmpty(...values: Array<string | undefined>) {
 
 function trimTrailingSlash(value: string) {
     return value.trim().replace(/\/+$/, "");
+}
+
+function serverLogtoURL(url: string) {
+    const config = getAuthConfig();
+    if (!config.internalIssuer || !config.issuer || !url.startsWith(config.issuer)) return url;
+    return `${config.internalIssuer}${url.slice(config.issuer.length)}`;
+}
+
+function publicLogtoDiscovery(discovery: OIDCDiscovery) {
+    const config = getAuthConfig();
+    if (!config.internalIssuer || !config.issuer) return discovery;
+    const replace = (value?: string) => (value && value.startsWith(config.internalIssuer) ? `${config.issuer}${value.slice(config.internalIssuer.length)}` : value);
+    return {
+        ...discovery,
+        issuer: replace(discovery.issuer) || discovery.issuer,
+        authorization_endpoint: replace(discovery.authorization_endpoint) || discovery.authorization_endpoint,
+        token_endpoint: replace(discovery.token_endpoint) || discovery.token_endpoint,
+        userinfo_endpoint: replace(discovery.userinfo_endpoint),
+        jwks_uri: replace(discovery.jwks_uri) || discovery.jwks_uri,
+    };
 }

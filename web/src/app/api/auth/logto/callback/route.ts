@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
         const token = await exchangeLogtoCode(request, discovery, code, pending.codeVerifier);
         const session = await sessionFromLogtoToken(discovery, token, pending.nonce);
         const response = NextResponse.redirect(new URL(redirect, request.url));
-        setSessionCookie(response, session);
+        setSessionCookie(response, session, request);
         clearLogtoPendingCookie(response);
         return response;
     } catch (err) {
