@@ -13,4 +13,5 @@ description: 当前版本已实现但仍需人工验证的变更项
 - New API 轻代理：登录后 `/api/new-api/config` 能读取 New API 模型和令牌，配置弹窗打开时自动导入第一个可用令牌为本地渠道，并可手动切换令牌。
 - Logto / New API 配置文档：`/docs/backend/logto-new-api-oidc` 能打开，并用 `example.com` 示例说明完整 `.env`、Infinite Canvas、Logto、New API OIDC 和 ecosystem 参数。
 - 设置弹窗：New API 区块的“前往 New API 配置”会打开 `/keys`， “关于”按钮会展示原项目、本项目仓库、许可证和版本信息。
+- 生产镜像发布：推送 `v1.0.0` tag 后，GitHub Actions 应发布 `ghcr.io/lihuahua2336/infinite-canvas:v1.0.0`、`ghcr.io/lihuahua2336/infinite-canvas:latest` 和对应文档站镜像。
 - 回归确认：手动多渠道配置、URL 参数导入、拉取模型、WebDAV 同步、提示词和画布功能不应回退。
