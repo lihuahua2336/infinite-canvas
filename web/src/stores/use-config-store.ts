@@ -5,6 +5,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
+import type { NewAPIConfigResponse } from "@/services/api/new-api";
+
 export type ApiCallFormat = "openai" | "gemini";
 
 export type ModelChannel = {
@@ -114,10 +116,13 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
 type ConfigStore = {
     config: AiConfig;
     webdav: WebdavSyncConfig;
+    newAPIConfig: NewAPIConfigResponse | null;
     isConfigOpen: boolean;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
+    setNewAPIConfig: (config: NewAPIConfigResponse | null) => void;
+    applyNewAPITokenAsChannel: (config: NewAPIConfigResponse, tokenId?: string) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
@@ -171,9 +176,10 @@ function isAiConfigReady(config: AiConfig, model: string) {
 
 export const useConfigStore = create<ConfigStore>()(
     persist(
-        (set, get) => ({
+        (set) => ({
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
+            newAPIConfig: null,
             isConfigOpen: false,
             shouldPromptContinue: false,
             updateConfig: (key, value) =>
@@ -189,6 +195,12 @@ export const useConfigStore = create<ConfigStore>()(
                         ...state.webdav,
                         [key]: value,
                     },
+                })),
+            setNewAPIConfig: (newAPIConfig) => set({ newAPIConfig }),
+            applyNewAPITokenAsChannel: (newAPIConfig, tokenId) =>
+                set((state) => ({
+                    config: applyNewAPITokenAsChannel(state.config, newAPIConfig, tokenId),
+                    newAPIConfig,
                 })),
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
             openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
@@ -320,6 +332,91 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
     };
+}
+
+export function configWithChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
+    const normalizedChannels = normalizeChannels({ ...config, channels });
+    const models = modelOptionsFromChannels(normalizedChannels);
+    const imageModels = keepOrSuggest(config.imageModels, filterModelsByCapability(models, "image"), models);
+    const videoModels = keepOrSuggest(config.videoModels, filterModelsByCapability(models, "video"), models);
+    const textModels = keepOrSuggest(config.textModels, filterModelsByCapability(models, "text"), models);
+    const audioModels = keepOrSuggest(config.audioModels, filterModelsByCapability(models, "audio"), models);
+    return {
+        ...config,
+        channels: normalizedChannels,
+        models,
+        baseUrl: normalizedChannels[0]?.baseUrl || config.baseUrl,
+        apiKey: normalizedChannels[0]?.apiKey || config.apiKey,
+        apiFormat: normalizedChannels[0]?.apiFormat || config.apiFormat,
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+        model: normalizeDefaultModel(config.model, textModels),
+        imageModel: normalizeDefaultModel(config.imageModel, imageModels),
+        videoModel: normalizeDefaultModel(config.videoModel, videoModels),
+        textModel: normalizeDefaultModel(config.textModel, textModels),
+        audioModel: normalizeDefaultModel(config.audioModel, audioModels),
+    };
+}
+
+function applyNewAPITokenAsChannel(config: AiConfig, newAPIConfig: NewAPIConfigResponse, tokenId?: string): AiConfig {
+    const token = resolveNewAPIToken(newAPIConfig, tokenId);
+    if (!token?.apiKey?.trim()) return config;
+    const channelId = `new-api-${token.tokenId}`;
+    const rawModels = uniqueRawModels(newAPIConfig.models || []);
+    const baseUrl = token.baseUrl.trim() || config.baseUrl || defaultConfig.baseUrl;
+    const channel = createModelChannel({
+        id: channelId,
+        name: token.tokenName || `${newAPIConfig.displayName || "New API"} ${token.tokenId}`,
+        baseUrl,
+        apiKey: token.apiKey,
+        apiFormat: "openai",
+        models: rawModels,
+    });
+    const others = config.channels.filter((item) => item.id !== channelId);
+    const nextConfig = configWithChannels({ ...config, baseUrl, apiKey: token.apiKey }, [channel, ...others]);
+    const allModels = modelOptionsFromChannels(nextConfig.channels);
+    const imageModels = filterModelsByCapability(allModels, "image");
+    const videoModels = filterModelsByCapability(allModels, "video");
+    const textModels = filterModelsByCapability(allModels, "text");
+    const audioModels = filterModelsByCapability(allModels, "audio");
+    return {
+        ...nextConfig,
+        models: allModels,
+        baseUrl,
+        apiKey: token.apiKey,
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+        model: preferChannelModel(textModels, channelId, nextConfig.model),
+        imageModel: preferChannelModel(imageModels, channelId, nextConfig.imageModel),
+        videoModel: preferChannelModel(videoModels, channelId, nextConfig.videoModel),
+        textModel: preferChannelModel(textModels, channelId, nextConfig.textModel),
+        audioModel: preferChannelModel(audioModels, channelId, nextConfig.audioModel),
+    };
+}
+
+function resolveNewAPIToken(newAPIConfig: NewAPIConfigResponse, tokenId?: string) {
+    const requested = (tokenId || "").trim();
+    return newAPIConfig.tokens.find((token) => String(token.tokenId) === requested) || newAPIConfig.tokens[0] || null;
+}
+
+function preferChannelModel(models: string[], channelId: string, current: string) {
+    if (current && models.includes(current) && decodeChannelModel(current)?.channelId === channelId) return current;
+    return models.find((model) => decodeChannelModel(model)?.channelId === channelId) || normalizeDefaultModel(current, models);
+}
+
+function keepOrSuggest(current: string[], suggested: string[], allModels: string[]) {
+    const available = new Set(allModels);
+    const kept = uniqueModelOptions(current).filter((model) => available.has(model));
+    return kept.length ? kept : suggested;
+}
+
+function normalizeDefaultModel(value: string, options: string[]) {
+    if (options.includes(value)) return value;
+    return options[0] || value;
 }
 
 function normalizeChannels(config: AiConfig) {

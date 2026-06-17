@@ -1,15 +1,17 @@
 "use client";
 
-import { App, Button, Form, Input, Modal, Progress, Segmented, Select, Tabs } from "antd";
-import { CircleAlert, Cloud, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
-import { useState } from "react";
+import { Alert, App, Button, Descriptions, Form, Input, Modal, Progress, Segmented, Select, Tabs, Tag } from "antd";
+import { CircleAlert, Cloud, ExternalLink, Info, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { fetchChannelModels } from "@/services/api/image";
+import { fetchNewAPIConfig } from "@/services/api/new-api";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
+import { APP_VERSION } from "@/constant/env";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionLabel, modelOptionsFromChannels, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { configWithChannels, createModelChannel, defaultBaseUrlForApiFormat, modelOptionLabel, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -60,6 +62,8 @@ function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProg
 export function AppConfigModal() {
     const { message } = App.useApp();
     const [activeTab, setActiveTab] = useState("channels");
+    const [aboutOpen, setAboutOpen] = useState(false);
+    const [loadingNewAPIConfig, setLoadingNewAPIConfig] = useState(false);
     const [loadingChannelId, setLoadingChannelId] = useState("");
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
@@ -67,14 +71,62 @@ export function AppConfigModal() {
     const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
     const config = useConfigStore((state) => state.config);
     const webdav = useConfigStore((state) => state.webdav);
+    const newAPIConfig = useConfigStore((state) => state.newAPIConfig);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
+    const setNewAPIConfig = useConfigStore((state) => state.setNewAPIConfig);
+    const applyNewAPITokenAsChannel = useConfigStore((state) => state.applyNewAPITokenAsChannel);
     const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
+    const autoAppliedNewAPI = useRef("");
     const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
     const webdavReady = Boolean(webdav.url.trim());
+    const serviceDisplayName = newAPIConfig?.displayName || "New API";
+    const newAPITokenOptions = (newAPIConfig?.tokens || []).map((token) => ({
+        label: token.group ? `${token.tokenName || `令牌 ${token.tokenId}`}（${token.group}）` : token.tokenName || `令牌 ${token.tokenId}`,
+        value: String(token.tokenId),
+    }));
+    const selectedNewAPIToken = (newAPIConfig?.tokens || []).find((token) => config.channels[0]?.id === `new-api-${token.tokenId}`) || newAPIConfig?.tokens?.[0];
+
+    const loadNewAPIConfig = async (showMessage = false) => {
+        setLoadingNewAPIConfig(true);
+        try {
+            const next = await fetchNewAPIConfig();
+            setNewAPIConfig(next);
+            if (next.configured && next.tokens.length) {
+                const firstChannelId = `new-api-${next.tokens[0].tokenId}`;
+                const latestConfig = useConfigStore.getState().config;
+                const hasNewAPIChannel = latestConfig.channels.some((channel) => channel.id.startsWith("new-api-") && channel.apiKey.trim());
+                if (!hasNewAPIChannel && autoAppliedNewAPI.current !== firstChannelId) {
+                    autoAppliedNewAPI.current = firstChannelId;
+                    useConfigStore.getState().applyNewAPITokenAsChannel(next);
+                    message.success(`已导入 ${next.displayName || "New API"} 默认令牌`);
+                }
+            }
+            if (showMessage) message.success(next.message || `${next.displayName || "New API"} 配置已刷新`);
+            return next;
+        } catch (error) {
+            const fallback = {
+                configured: false,
+                displayName: "New API",
+                loginUrl: "",
+                message: error instanceof Error ? error.message : "读取 New API 配置失败",
+                models: [],
+                tokens: [],
+            };
+            setNewAPIConfig(fallback);
+            if (showMessage) message.error(fallback.message);
+            return fallback;
+        } finally {
+            setLoadingNewAPIConfig(false);
+        }
+    };
+
+    useEffect(() => {
+        if (isConfigOpen) void loadNewAPIConfig(false);
+    }, [isConfigOpen]);
 
     const saveConfig = (nextConfig: AiConfig) => {
         (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
@@ -89,7 +141,7 @@ export function AppConfigModal() {
     };
 
     const updateChannels = (channels: ModelChannel[]) => {
-        const nextConfig = withChannels(config, channels);
+        const nextConfig = configWithChannels(config, channels);
         saveConfig(nextConfig);
     };
 
@@ -208,25 +260,26 @@ export function AppConfigModal() {
     };
 
     return (
-        <Modal
-            title={
-                <div>
-                    <div className="text-lg font-semibold">配置与用户偏好</div>
-                    <div className="mt-1 text-xs font-normal text-stone-500">渠道聚合、模型选择和同步偏好</div>
-                </div>
-            }
-            open={isConfigOpen}
-            width={980}
-            centered
-            onCancel={() => setConfigDialogOpen(false)}
-            styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 12 } }}
-            footer={
-                <Button type="primary" onClick={finishConfig}>
-                    完成
-                </Button>
-            }
-        >
-            <Tabs
+        <>
+            <Modal
+                title={
+                    <div>
+                        <div className="text-lg font-semibold">配置与用户偏好</div>
+                        <div className="mt-1 text-xs font-normal text-stone-500">渠道聚合、模型选择和同步偏好</div>
+                    </div>
+                }
+                open={isConfigOpen}
+                width={980}
+                centered
+                onCancel={() => setConfigDialogOpen(false)}
+                styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 12 } }}
+                footer={
+                    <Button type="primary" onClick={finishConfig}>
+                        完成
+                    </Button>
+                }
+            >
+                <Tabs
                 activeKey={activeTab}
                 onChange={setActiveTab}
                 items={[
@@ -255,6 +308,57 @@ export function AppConfigModal() {
                                         </Button>
                                     </div>
                                 </div>
+                                <section className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 text-sm font-semibold">
+                                                {serviceDisplayName}
+                                                {newAPIConfig?.configured ? <Tag color="green">已连接</Tag> : <Tag>待配置</Tag>}
+                                            </div>
+                                            <div className="mt-1 text-xs text-stone-500">登录后自动读取令牌和模型，并作为本地渠道写入当前配置。</div>
+                                        </div>
+                                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                            <Button size="small" icon={<RefreshCw className="size-3.5" />} loading={loadingNewAPIConfig} onClick={() => void loadNewAPIConfig(true)}>
+                                                刷新
+                                            </Button>
+                                            {newAPIConfig?.loginUrl ? (
+                                                <Button size="small" icon={<ExternalLink className="size-3.5" />} href={newAPIConfig.loginUrl} target="_blank" rel="noopener noreferrer">
+                                                    前往 {serviceDisplayName} 配置
+                                                </Button>
+                                            ) : null}
+                                            <Button size="small" icon={<Info className="size-3.5" />} onClick={() => setAboutOpen(true)}>
+                                                关于
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    {newAPIConfig?.message ? <Alert className="mb-3" type={newAPIConfig.configured ? "success" : "info"} showIcon message={newAPIConfig.message} /> : null}
+                                    <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                                        <Select
+                                            placeholder={loadingNewAPIConfig ? `正在读取 ${serviceDisplayName} 令牌` : `请选择 ${serviceDisplayName} 令牌`}
+                                            value={selectedNewAPIToken ? String(selectedNewAPIToken.tokenId) : undefined}
+                                            options={newAPITokenOptions}
+                                            loading={loadingNewAPIConfig}
+                                            disabled={!newAPITokenOptions.length}
+                                            onChange={(tokenId) => {
+                                                if (!newAPIConfig) return;
+                                                applyNewAPITokenAsChannel(newAPIConfig, tokenId);
+                                                message.success("已切换 New API 本地渠道");
+                                            }}
+                                        />
+                                        <Button
+                                            type="primary"
+                                            disabled={!newAPIConfig?.tokens?.length}
+                                            onClick={() => {
+                                                if (!newAPIConfig) return;
+                                                applyNewAPITokenAsChannel(newAPIConfig, selectedNewAPIToken ? String(selectedNewAPIToken.tokenId) : undefined);
+                                                message.success("已导入 New API 渠道");
+                                            }}
+                                        >
+                                            导入 / 切换
+                                        </Button>
+                                    </div>
+                                    <div className="mt-2 text-xs text-stone-500">当前读取到 {newAPIConfig?.models?.length || 0} 个模型、{newAPIConfig?.tokens?.length || 0} 个令牌；手动渠道仍可继续新增和编辑。</div>
+                                </section>
                                 <div className="space-y-3">
                                     {config.channels.map((channel) => (
                                         <section key={channel.id} className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
@@ -429,44 +533,38 @@ export function AppConfigModal() {
                         ),
                     },
                 ]}
-            />
-        </Modal>
+                />
+            </Modal>
+            <Modal
+                title="关于"
+                open={aboutOpen}
+                width={560}
+                centered
+                onCancel={() => setAboutOpen(false)}
+                footer={
+                    <Button type="primary" onClick={() => setAboutOpen(false)}>
+                        知道了
+                    </Button>
+                }
+            >
+                <Descriptions column={1} size="small" bordered>
+                    <Descriptions.Item label="项目">无限画布</Descriptions.Item>
+                    <Descriptions.Item label="当前版本">{APP_VERSION}</Descriptions.Item>
+                    <Descriptions.Item label="原项目">
+                        <a href="https://github.com/basketikun/infinite-canvas" target="_blank" rel="noopener noreferrer">
+                            basketikun/infinite-canvas
+                        </a>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="本项目">
+                        <a href="https://github.com/lihuahua2336/infinite-canvas" target="_blank" rel="noopener noreferrer">
+                            lihuahua2336/infinite-canvas
+                        </a>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="许可证">GNU AGPL-3.0</Descriptions.Item>
+                </Descriptions>
+            </Modal>
+        </>
     );
-}
-
-function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
-    const models = modelOptionsFromChannels(channels);
-    const imageModels = keepOrSuggest(config.imageModels, filterModelsByCapability(models, "image"), models);
-    const videoModels = keepOrSuggest(config.videoModels, filterModelsByCapability(models, "video"), models);
-    const textModels = keepOrSuggest(config.textModels, filterModelsByCapability(models, "text"), models);
-    const audioModels = keepOrSuggest(config.audioModels, filterModelsByCapability(models, "audio"), models);
-    return {
-        ...config,
-        channels,
-        models,
-        baseUrl: channels[0]?.baseUrl || config.baseUrl,
-        apiKey: channels[0]?.apiKey || config.apiKey,
-        apiFormat: channels[0]?.apiFormat || config.apiFormat,
-        imageModels,
-        videoModels,
-        textModels,
-        audioModels,
-        imageModel: normalizeDefaultModel(config.imageModel, imageModels),
-        videoModel: normalizeDefaultModel(config.videoModel, videoModels),
-        textModel: normalizeDefaultModel(config.textModel, textModels),
-        audioModel: normalizeDefaultModel(config.audioModel, audioModels),
-    };
-}
-
-function keepOrSuggest(current: string[], suggested: string[], allModels: string[]) {
-    const available = new Set(allModels);
-    const kept = uniqueModels(current).filter((model) => available.has(model));
-    return kept.length ? kept : suggested;
-}
-
-function normalizeDefaultModel(value: string, options: string[]) {
-    if (options.includes(value)) return value;
-    return options[0] || value;
 }
 
 function normalizeImageCount(value: string) {

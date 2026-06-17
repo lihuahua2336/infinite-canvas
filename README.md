@@ -41,7 +41,7 @@
 
 ## 快速开始
 
-推荐直接导入仓库到 Vercel，根目录已提供 `vercel.json`，会构建 `web/`。AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器本地。
+推荐直接导入仓库到 Vercel，根目录已提供 `vercel.json`，会构建 `web/`。当前业务页面默认需要 Logto 登录后使用；AI API Key、Base URL、画布、素材和生成记录仍默认保存在浏览器本地。
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
@@ -60,11 +60,28 @@ docker run --rm -p 3000:3000 infinite-canvas
 
 运行后默认端口3000，可访问 `http://localhost:3000`。
 
-首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
+首次部署请先配置 Logto 相关环境变量，登录后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`，或通过 New API 自动导入令牌。
 
 ## New API 自动配置
 
-如果使用 New API，可在 `系统设置 -> 聊天方式 -> 添加聊天设置` 中填入：
+如果使用 New API，部署时配置：
+
+```text
+LOGTO_ISSUER=
+LOGTO_CLIENT_ID=
+LOGTO_CLIENT_SECRET=
+LOGTO_SCOPE=openid profile email
+SESSION_SECRET=
+NEW_API_BASE_URL=
+NEW_API_PUBLIC_URL=
+NEW_API_DISPLAY_NAME=New API
+NEW_API_LOGTO_AUDIENCE=
+NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read
+```
+
+登录后打开“配置与用户偏好”，会通过 Next.js route 读取 New API 的模型和令牌，并把第一个可用令牌自动写成本地渠道；也可以在设置里切换令牌，或点击“前往 New API 配置”打开 `NEW_API_PUBLIC_URL/keys`。
+
+原来的 URL 参数导入仍保留。如果只想从 New API 跳转填入本地直连配置，可在 `系统设置 -> 聊天方式 -> 添加聊天设置` 中填入：
 
 ```text
 https://canvas.best?apiKey={key}&baseUrl={address}
