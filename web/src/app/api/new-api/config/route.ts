@@ -30,6 +30,15 @@ export type NewAPIConfigResponse = {
     tokens: NewAPITokenBrief[];
 };
 
+class NewAPIRequestError extends Error {
+    constructor(
+        message: string,
+        public status: number,
+    ) {
+        super(message);
+    }
+}
+
 export async function GET(request: NextRequest) {
     const displayName = newAPIDisplayName();
     const result: NewAPIConfigResponse = {
@@ -68,6 +77,11 @@ export async function GET(request: NextRequest) {
         if (refreshed.refreshed) setSessionCookie(response, refreshed.session, request);
         return response;
     } catch (error) {
+        if (error instanceof NewAPIRequestError && error.status === 401) {
+            const response = NextResponse.json({ ...result, message: `请重新登录以授权访问 ${displayName}` }, { status: 401 });
+            clearSessionCookie(response);
+            return response;
+        }
         result.message = error instanceof Error ? error.message : `${displayName} 读取失败`;
         const response = NextResponse.json(result);
         if (refreshed.refreshed) setSessionCookie(response, refreshed.session, request);
@@ -92,7 +106,7 @@ async function newAPIGet<T = unknown>(accessToken: string, path: string) {
     });
     const payload = (await response.json().catch(() => ({}))) as { success?: boolean; message?: string; data?: T };
     const message = (payload.message || "").trim();
-    if (!response.ok) throw new Error(`${newAPIDisplayName()} 请求失败：${path} ${response.status} ${message || response.statusText}`);
+    if (!response.ok) throw new NewAPIRequestError(`${newAPIDisplayName()} 请求失败：${path} ${response.status} ${message || response.statusText}`, response.status);
     if (payload.success === false) throw new Error(message || `${newAPIDisplayName()} 请求失败：${path}`);
     if ("data" in payload) return payload.data as T;
     return payload as T;
