@@ -3,6 +3,9 @@ services:
     build:
       context: ..
       dockerfile: docs/Dockerfile
+    env_file:
+      - path: ../.env.production.local
+        required: false
     ports:
       - "3001:3000"
     restart: unless-stopped

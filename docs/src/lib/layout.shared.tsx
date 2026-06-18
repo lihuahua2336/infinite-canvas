@@ -1,5 +1,5 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { appName, gitConfig } from './shared';
+import { appName, appRedirectRoute, gitConfig } from './shared';
 import { ArrowUpRight } from 'lucide-react';
 
 const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
@@ -28,7 +28,7 @@ export function baseOptions(): BaseLayoutProps {
             <ArrowUpRight className="size-4" />
           </span>
         ),
-        url: 'https://canvas.best/',
+        url: appRedirectRoute,
         external: true,
         on: 'nav',
       },

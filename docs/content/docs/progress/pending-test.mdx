@@ -12,6 +12,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Logto 本地回调地址：Docker 或代理映射到 `http://localhost:3003` 时，登录回调和登录错误跳转应使用 `APP_PUBLIC_URL`，不再跳到容器内部的 `http://0.0.0.0:3000`。
 - New API 轻代理：登录后 `/api/new-api/config` 能读取 New API 模型和令牌，配置弹窗打开时自动导入第一个可用令牌为本地渠道，并可手动切换令牌。
 - Logto / New API 配置文档：`/docs/backend/logto-new-api-oidc` 能打开，并用 `example.com` 示例说明完整 `.env`、Infinite Canvas、Logto、New API OIDC 和 ecosystem 参数。
+- 文档站在线体验入口：文档首页按钮、顶部导航和项目介绍侧边栏的“在线体验”应跳转到 `/go/app`，并按 `APP_PUBLIC_URL` 跳到实际部署的主应用地址。
 - 设置弹窗：New API 区块的“前往 New API 配置”会打开 `/keys`， “关于”按钮会展示原项目、本项目仓库、许可证和版本信息。
 - AI 渠道代理：渠道配置新增“前端直连 / Next.js 转发”，当 AI 接口浏览器预检跨域失败时，切到 Next.js 转发后生图、图生图、文本工具流、音频、视频和模型拉取应改走同源 `/api/ai-proxy`。
 - 生产镜像发布：推送 `v1.0.0` tag 后，GitHub Actions 应发布 `ghcr.io/lihuahua2336/infinite-canvas:v1.0.0`、`ghcr.io/lihuahua2336/infinite-canvas:latest` 和对应文档站镜像。

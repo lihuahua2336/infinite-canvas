@@ -32,6 +32,7 @@ docker compose -f docker-compose.local.yml up -d --build
 ## 文档站镜像
 
 文档站位于 `docs/` 目录，按带服务端能力的 Next.js standalone 应用单独构建，不打进主应用镜像。
+文档站会优先读取根目录 `.env.production.local` 里的 `APP_PUBLIC_URL`，用于“在线体验”入口跳转到实际部署的主应用地址；没有该文件或未配置该变量时默认跳转到 `https://canvas.best/`。
 
 使用发布镜像：
 
