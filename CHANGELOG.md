@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v1.0.1 - 2026-06-19
+
++ [发布] 生产部署统一使用根目录 `docker-compose.yml` 加 `.env`，`docker-compose.yml` 会显式读取 `.env` 并支持通过 `APP_PORT` 配置对外端口；文档站 Docker Compose 同步读取根目录 `.env`。
++ [新增] AI 渠道新增“前端直连 / Next.js 转发”模式；当第三方接口未允许当前站点 CORS 预检时，可切换到同源 `/api/ai-proxy` 转发，覆盖生图、编辑图、文本工具流、音频、视频和模型拉取请求。
++ [新增] `/api/ai-proxy` 会限制 localhost、内网和保留地址目标，避免把同源代理变成任意内网访问入口。
++ [优化] OpenAI 兼容文生图和图片编辑默认先尝试 `stream: true`、`partial_images: 1` 流式请求；接口明确不支持流式参数时自动回退原同步请求，降低长耗时同步请求触发网关超时的概率。
++ [优化] 文档站“在线体验”入口统一通过 `APP_PUBLIC_URL` 配置跳转，不再写死旧域名。
++ [优化] 首页右上角隐藏版本更新入口和 GitHub 操作入口，减少生产环境无关按钮。
++ [修复] New API 登录态失效时清理旧 session cookie，并给出重新登录提示，避免 `/api/ecosystem/me 401 invalid_logto_token` 反复以原始错误恢复。
++ [修复] New API 配置接口返回 401 时，前端同步清除本地登录状态并回到登录流程，避免页面仍显示已登录但无法刷新 API 配置。
++ [修复] New API 配置入口改为 `/console/token`，错误提示补充请求路径、状态码和上游消息，方便定位渠道配置问题。
+
 ## v1.0.0 - 2026-06-18
 
 + [发布] 生产镜像迁移到 `ghcr.io/lihuahua2336/infinite-canvas`，版本 tag 构建会发布 `v1.0.0`、`latest` 和 sha 标签；文档站镜像迁移到 `ghcr.io/lihuahua2336/infinite-canvas-docs`。

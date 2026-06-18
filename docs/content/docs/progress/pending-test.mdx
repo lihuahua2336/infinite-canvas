@@ -11,10 +11,12 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Logto 登录门禁：未登录访问 `/`、`/canvas`、`/image`、`/video`、`/prompts`、`/assets` 会跳转 `/login?redirect=...`，登录成功后返回原页面，刷新后仍保持登录。
 - Logto 本地回调地址：Docker 或代理映射到 `http://localhost:3003` 时，登录回调和登录错误跳转应使用 `APP_PUBLIC_URL`，不再跳到容器内部的 `http://0.0.0.0:3000`。
 - New API 轻代理：登录后 `/api/new-api/config` 能读取 New API 模型和令牌，配置弹窗打开时自动导入第一个可用令牌为本地渠道，并可手动切换令牌。
+- New API 登录过期：Logto / New API 授权过期或刷新失败时，打开设置刷新配置应清除前端登录态并跳回登录流程，不应继续显示已登录但无法更新 API 配置。
 - Logto / New API 配置文档：`/docs/backend/logto-new-api-oidc` 能打开，并用 `example.com` 示例说明完整 `.env`、Infinite Canvas、Logto、New API OIDC 和 ecosystem 参数。
 - 文档站在线体验入口：文档首页按钮、顶部导航和项目介绍侧边栏的“在线体验”应跳转到 `/go/app`，并按 `APP_PUBLIC_URL` 跳到实际部署的主应用地址。
-- 设置弹窗：New API 区块的“前往 New API 配置”会打开 `/keys`， “关于”按钮会展示原项目、本项目仓库、许可证和版本信息。
+- 设置弹窗：New API 区块的“前往 New API 配置”会打开 `/console/token`， “关于”按钮会展示原项目、本项目仓库、许可证和版本信息。
 - AI 渠道代理：渠道配置新增“前端直连 / Next.js 转发”，当 AI 接口浏览器预检跨域失败时，切到 Next.js 转发后生图、图生图、文本工具流、音频、视频和模型拉取应改走同源 `/api/ai-proxy`。
 - OpenAI 兼容生图：文生图和图生图 / 编辑默认先尝试 `stream: true` 流式请求，接口明确不支持流式参数时自动回退原同步请求。
-- 生产镜像发布：推送 `v1.0.0` tag 后，GitHub Actions 应发布 `ghcr.io/lihuahua2336/infinite-canvas:v1.0.0`、`ghcr.io/lihuahua2336/infinite-canvas:latest` 和对应文档站镜像。
+- Docker 部署：主应用和文档站发布镜像部署统一读取根目录 `.env`；主应用 `docker-compose.yml` 可通过 `APP_PORT` 配置对外端口。
+- 生产镜像发布：推送 `v1.0.1` tag 后，GitHub Actions 应发布 `ghcr.io/lihuahua2336/infinite-canvas:v1.0.1`、`ghcr.io/lihuahua2336/infinite-canvas:latest` 和对应文档站镜像。
 - 回归确认：手动多渠道配置、URL 参数导入、拉取模型、WebDAV 同步、提示词和画布功能不应回退。

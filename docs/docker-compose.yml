@@ -2,7 +2,7 @@ services:
   docs:
     image: ghcr.io/lihuahua2336/infinite-canvas-docs:latest
     env_file:
-      - path: ../.env.production.local
+      - path: ../.env
         required: false
     ports:
       - "3001:3000"

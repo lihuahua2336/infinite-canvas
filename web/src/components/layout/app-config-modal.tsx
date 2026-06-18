@@ -6,12 +6,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { fetchChannelModels } from "@/services/api/image";
-import { fetchNewAPIConfig } from "@/services/api/new-api";
+import { fetchNewAPIConfig, NewAPIConfigError } from "@/services/api/new-api";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { APP_VERSION } from "@/constant/env";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { configWithChannels, createModelChannel, defaultBaseUrlForApiFormat, modelOptionLabel, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ApiProxyMode, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -85,6 +86,7 @@ export function AppConfigModal() {
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
+    const clearUserSession = useUserStore((state) => state.clearSession);
     const autoAppliedNewAPI = useRef("");
     const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
     const webdavReady = Boolean(webdav.url.trim());
@@ -113,6 +115,7 @@ export function AppConfigModal() {
             if (showMessage) message.success(next.message || `${next.displayName || "New API"} 配置已刷新`);
             return next;
         } catch (error) {
+            if (error instanceof NewAPIConfigError && error.status === 401) clearUserSession();
             const fallback = {
                 configured: false,
                 displayName: "New API",

@@ -15,11 +15,21 @@ export type NewAPIConfigResponse = {
     tokens: NewAPITokenBrief[];
 };
 
+export class NewAPIConfigError extends Error {
+    constructor(
+        message: string,
+        public status: number,
+    ) {
+        super(message);
+        this.name = "NewAPIConfigError";
+    }
+}
+
 export async function fetchNewAPIConfig() {
     const response = await fetch("/api/new-api/config", { cache: "no-store" });
     const config = (await response.json().catch(() => null)) as NewAPIConfigResponse | null;
     if (!config) throw new Error("读取 New API 配置失败");
-    if (!response.ok && !config.message) throw new Error("读取 New API 配置失败");
+    if (!response.ok) throw new NewAPIConfigError(config.message || "读取 New API 配置失败", response.status);
     return {
         ...config,
         configured: Boolean(config.configured),
