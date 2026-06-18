@@ -73,6 +73,8 @@ type ImageApiResponse = {
     code?: number;
     msg?: string;
 };
+type ImageRequestBody = Record<string, unknown>;
+type ImageStreamState = { buffer: string; images: Array<{ id: string; dataUrl: string }>; payload?: ImageApiResponse; error?: string };
 type GeminiPart = {
     text?: string;
     inlineData?: { mimeType?: string; data?: string };
@@ -206,6 +208,18 @@ function parseImagePayload(payload: ImageApiResponse) {
     }
 
     return images;
+}
+
+function imageRequestBody(config: AiConfig, prompt: string, n: number, quality: string | undefined, requestSize: string | undefined): ImageRequestBody {
+    return {
+        model: config.model,
+        prompt: withSystemPrompt(config, prompt),
+        n,
+        ...(quality ? { quality } : {}),
+        ...(requestSize ? { size: requestSize } : {}),
+        response_format: "b64_json",
+        output_format: IMAGE_OUTPUT_FORMAT,
+    };
 }
 
 function readAxiosError(error: unknown, fallback: string) {
@@ -348,6 +362,57 @@ async function readFetchError(response: Response, fallback: string) {
     } catch {
         return text.slice(0, 300) || readStatusError(response.status, fallback);
     }
+}
+
+function consumeImageStreamBlock(block: string, state: ImageStreamState) {
+    const data = block
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).replace(/^ /, ""))
+        .join("\n")
+        .trim();
+    if (!data || data === "[DONE]") return;
+    const event = JSON.parse(data) as Record<string, unknown>;
+    const errorMessage = responseErrorMessage(event);
+    if (errorMessage) state.error = errorMessage;
+    if (Array.isArray(event.data)) state.payload = event as ImageApiResponse;
+    collectStreamImage(event, state);
+}
+
+function consumeImageStreamText(state: ImageStreamState, text: string, flush = false) {
+    state.buffer += text;
+    for (;;) {
+        const match = state.buffer.match(/\r?\n\r?\n/);
+        if (!match) break;
+        consumeImageStreamBlock(state.buffer.slice(0, match.index), state);
+        state.buffer = state.buffer.slice(match.index + match[0].length);
+    }
+    if (flush && state.buffer.trim()) {
+        consumeImageStreamBlock(state.buffer, state);
+        state.buffer = "";
+    }
+}
+
+function collectStreamImage(event: Record<string, unknown>, state: ImageStreamState) {
+    const source = streamImageSource(event);
+    const b64 = stringValue(source.b64_json) || stringValue(source.partial_image_b64) || stringValue(source.partial_image) || stringValue(source.image);
+    const url = stringValue(source.url);
+    const dataUrl = b64 ? `data:image/${IMAGE_OUTPUT_FORMAT};base64,${b64}` : url;
+    if (!dataUrl) return;
+    state.images.push({ id: nanoid(), dataUrl });
+}
+
+function streamImageSource(event: Record<string, unknown>) {
+    if (stringValue(event.b64_json) || stringValue(event.partial_image_b64) || stringValue(event.partial_image) || stringValue(event.image) || stringValue(event.url)) return event;
+    if (isRecord(event.data)) return event.data;
+    if (isRecord(event.image)) return event.image;
+    return event;
+}
+
+function shouldFallbackImageStream(status: number, message: string) {
+    if (![400, 404, 422].includes(status)) return false;
+    const text = message.toLowerCase();
+    return text.includes("stream") || text.includes("unsupported") || text.includes("unknown parameter") || text.includes("unrecognized") || text.includes("not support") || text.includes("invalid");
 }
 
 function consumeResponseStreamBlock(block: string, state: ResponseStreamState, onDelta?: (text: string) => void) {
@@ -615,6 +680,66 @@ function parseGeminiImagePayload(payload: GeminiPayload) {
     return images;
 }
 
+async function requestGenerationSync(config: AiConfig, body: ImageRequestBody, options?: RequestOptions) {
+    const request = aiRequest(config, "/images/generations", "POST", "application/json");
+    const response = await axios.post<ImageApiResponse>(request.url, body, {
+        headers: request.headers,
+        signal: options?.signal,
+    });
+    return parseImagePayload(response.data);
+}
+
+async function requestEditSync(config: AiConfig, formData: FormData, options?: RequestOptions) {
+    const request = aiRequest(config, "/images/edits", "POST");
+    const response = await axios.post<ImageApiResponse>(request.url, formData, { headers: request.headers, signal: options?.signal });
+    return parseImagePayload(response.data);
+}
+
+function cloneFormData(formData: FormData) {
+    const next = new FormData();
+    formData.forEach((value, key) => next.append(key, value));
+    return next;
+}
+
+async function requestImageStream(config: AiConfig, path: string, body: BodyInit, headers: Record<string, string>, options?: RequestOptions) {
+    const request = aiApiRequest(config, path, "POST", { ...headers, Accept: "text/event-stream" });
+    const response = await fetch(request.url, {
+        method: "POST",
+        headers: request.headers,
+        body,
+        signal: options?.signal,
+    });
+    if (!response.ok) {
+        const message = await readFetchError(response, "请求失败");
+        if (shouldFallbackImageStream(response.status, message)) return null;
+        throw new Error(message);
+    }
+    const contentType = response.headers.get("content-type") || "";
+    if (!response.body || !contentType.includes("text/event-stream")) {
+        const payload = (await response.json()) as ImageApiResponse;
+        return parseImagePayload(payload);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const state: ImageStreamState = { buffer: "", images: [] };
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        consumeImageStreamText(state, decoder.decode(value, { stream: true }));
+        if (state.error) throw new Error(state.error);
+    }
+    consumeImageStreamText(state, decoder.decode(), true);
+    if (state.error) throw new Error(state.error);
+    if (state.payload) return parseImagePayload(state.payload);
+    if (state.images.length) return [state.images[state.images.length - 1]];
+    throw new Error("接口没有返回图片");
+}
+
+async function requestGenerationStream(config: AiConfig, body: ImageRequestBody, options?: RequestOptions) {
+    return requestImageStream(config, "/images/generations", JSON.stringify({ ...body, stream: true, partial_images: 1 }), aiHeaders(config, "application/json"), options);
+}
+
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
@@ -627,26 +752,9 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     }
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
+    const body = imageRequestBody(requestConfig, prompt, n, quality, requestSize);
     try {
-        const request = aiRequest(requestConfig, "/images/generations", "POST", "application/json");
-        const response = await axios.post<ImageApiResponse>(
-            request.url,
-            {
-                model: requestConfig.model,
-                prompt: withSystemPrompt(requestConfig, prompt),
-                n,
-                ...(quality ? { quality } : {}),
-                ...(requestSize ? { size: requestSize } : {}),
-                response_format: "b64_json",
-                output_format: IMAGE_OUTPUT_FORMAT,
-            },
-            {
-                headers: request.headers,
-                signal: options?.signal,
-            },
-        );
-        const images = parseImagePayload(response.data);
-        return images;
+        return (await requestGenerationStream(requestConfig, body, options)) || (await requestGenerationSync(requestConfig, body, options));
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
@@ -683,10 +791,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        const request = aiRequest(requestConfig, "/images/edits", "POST");
-        const response = await axios.post<ImageApiResponse>(request.url, formData, { headers: request.headers, signal: options?.signal });
-        const images = parseImagePayload(response.data);
-        return images;
+        const streamData = cloneFormData(formData);
+        streamData.set("stream", "true");
+        streamData.set("partial_images", "1");
+        return (await requestImageStream(requestConfig, "/images/edits", streamData, aiHeaders(requestConfig), options)) || (await requestEditSync(requestConfig, formData, options));
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
