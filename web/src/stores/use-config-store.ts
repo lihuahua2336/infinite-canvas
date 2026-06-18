@@ -8,6 +8,7 @@ import { nanoid } from "nanoid";
 import type { NewAPIConfigResponse } from "@/services/api/new-api";
 
 export type ApiCallFormat = "openai" | "gemini";
+export type ApiProxyMode = "direct" | "nextjs";
 
 export type ModelChannel = {
     id: string;
@@ -15,6 +16,7 @@ export type ModelChannel = {
     baseUrl: string;
     apiKey: string;
     apiFormat: ApiCallFormat;
+    proxyMode: ApiProxyMode;
     models: string[];
 };
 
@@ -23,6 +25,7 @@ export type AiConfig = {
     baseUrl: string;
     apiKey: string;
     apiFormat: ApiCallFormat;
+    proxyMode: ApiProxyMode;
     channels: ModelChannel[];
     model: string;
     imageModel: string;
@@ -69,6 +72,7 @@ export const defaultConfig: AiConfig = {
     baseUrl: OPENAI_BASE_URL,
     apiKey: "",
     apiFormat: "openai",
+    proxyMode: "direct",
     channels: [
         {
             id: "default",
@@ -76,6 +80,7 @@ export const defaultConfig: AiConfig = {
             baseUrl: OPENAI_BASE_URL,
             apiKey: "",
             apiFormat: "openai",
+            proxyMode: "direct",
             models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
         },
     ],
@@ -225,6 +230,7 @@ export const useConfigStore = create<ConfigStore>()(
                         ...config,
                         channelMode: "local",
                         apiFormat: normalizeApiFormat(config.apiFormat),
+                        proxyMode: normalizeProxyMode(config.proxyMode),
                         channels,
                         models,
                         imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
@@ -271,6 +277,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         baseUrl: channel?.baseUrl?.trim() || defaultBaseUrlForApiFormat(apiFormat),
         apiKey: channel?.apiKey || "",
         apiFormat,
+        proxyMode: normalizeProxyMode(channel?.proxyMode),
         models: uniqueRawModels(channel?.models || []),
     };
 }
@@ -331,6 +338,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
+        proxyMode: channel.proxyMode,
     };
 }
 
@@ -348,6 +356,7 @@ export function configWithChannels(config: AiConfig, channels: ModelChannel[]): 
         baseUrl: normalizedChannels[0]?.baseUrl || config.baseUrl,
         apiKey: normalizedChannels[0]?.apiKey || config.apiKey,
         apiFormat: normalizedChannels[0]?.apiFormat || config.apiFormat,
+        proxyMode: normalizedChannels[0]?.proxyMode || config.proxyMode,
         imageModels,
         videoModels,
         textModels,
@@ -437,6 +446,7 @@ function normalizeChannels(config: AiConfig) {
                 baseUrl: config.baseUrl || defaultConfig.baseUrl,
                 apiKey: config.apiKey || "",
                 apiFormat: config.apiFormat || defaultConfig.apiFormat,
+                proxyMode: config.proxyMode || defaultConfig.proxyMode,
                 models: uniqueRawModels([
                     ...(config.models || []),
                     config.model,
@@ -457,6 +467,10 @@ export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
 
 function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
     return apiFormat === "gemini" ? "gemini" : "openai";
+}
+
+function normalizeProxyMode(proxyMode: unknown): ApiProxyMode {
+    return proxyMode === "nextjs" ? "nextjs" : "direct";
 }
 
 function uniqueRawModels(models: string[]) {

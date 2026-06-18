@@ -11,7 +11,7 @@ import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent }
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { APP_VERSION } from "@/constant/env";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { configWithChannels, createModelChannel, defaultBaseUrlForApiFormat, modelOptionLabel, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { configWithChannels, createModelChannel, defaultBaseUrlForApiFormat, modelOptionLabel, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ApiProxyMode, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -39,6 +39,11 @@ const modelGroups: ModelGroup[] = [
 const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
     { label: "OpenAI", value: "openai" },
     { label: "Gemini", value: "gemini" },
+];
+
+const apiProxyModeOptions: Array<{ label: string; value: ApiProxyMode }> = [
+    { label: "前端直连", value: "direct" },
+    { label: "Next.js 转发", value: "nextjs" },
 ];
 
 const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench"];
@@ -366,7 +371,7 @@ export function AppConfigModal() {
                                                 <div className="min-w-0">
                                                     <div className="truncate text-sm font-semibold">{channel.name || "未命名渠道"}</div>
                                                     <div className="mt-1 text-xs text-stone-500">
-                                                        {apiFormatLabel(channel.apiFormat)} · 已保存 {channel.models.length} 个模型
+                                                        {apiFormatLabel(channel.apiFormat)} · {apiProxyModeLabel(channel.proxyMode)} · 已保存 {channel.models.length} 个模型
                                                     </div>
                                                 </div>
                                                 <div className="flex shrink-0 gap-2">
@@ -382,6 +387,14 @@ export function AppConfigModal() {
                                                 </Form.Item>
                                                 <Form.Item label="调用格式" className="mb-0">
                                                     <Select value={channel.apiFormat} options={apiFormatOptions} onChange={(value: ApiCallFormat) => updateChannelApiFormat(channel, value)} />
+                                                </Form.Item>
+                                                <Form.Item label="连接方式" extra="目标接口不支持浏览器跨域时，切换为 Next.js 转发。" className="mb-0">
+                                                    <Segmented
+                                                        block
+                                                        value={channel.proxyMode}
+                                                        onChange={(value) => updateChannel(channel.id, { proxyMode: value as ApiProxyMode })}
+                                                        options={apiProxyModeOptions}
+                                                    />
                                                 </Form.Item>
                                                 <Form.Item label="Base URL" className="mb-0">
                                                     <Input value={channel.baseUrl} onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })} />
@@ -577,6 +590,10 @@ function uniqueModels(models: string[]) {
 
 function apiFormatLabel(apiFormat: ApiCallFormat) {
     return apiFormat === "gemini" ? "Gemini" : "OpenAI";
+}
+
+function apiProxyModeLabel(proxyMode: ApiProxyMode) {
+    return proxyMode === "nextjs" ? "Next.js 转发" : "前端直连";
 }
 
 function formatWebdavTime(value: string) {
