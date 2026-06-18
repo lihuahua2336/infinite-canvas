@@ -2,7 +2,7 @@ export const appName = '无限画布';
 export const docsRoute = '/docs';
 export const docsContentRoute = '/llms.mdx/docs';
 export const appRedirectRoute = '/go/app';
-export const defaultAppUrl = 'https://canvas.best/';
+export const defaultAppUrl = '/';
 
 // fill this with your actual GitHub info, for example:
 export const gitConfig = {
