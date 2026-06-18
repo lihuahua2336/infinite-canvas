@@ -91,8 +91,9 @@ async function newAPIGet<T = unknown>(accessToken: string, path: string) {
         cache: "no-store",
     });
     const payload = (await response.json().catch(() => ({}))) as { success?: boolean; message?: string; data?: T };
-    if (!response.ok) throw new Error(`${newAPIDisplayName()} 请求失败：${response.statusText || response.status}`);
-    if (payload.success === false) throw new Error((payload.message || "").trim() || `${newAPIDisplayName()} 请求失败`);
+    const message = (payload.message || "").trim();
+    if (!response.ok) throw new Error(`${newAPIDisplayName()} 请求失败：${path} ${response.status} ${message || response.statusText}`);
+    if (payload.success === false) throw new Error(message || `${newAPIDisplayName()} 请求失败：${path}`);
     if ("data" in payload) return payload.data as T;
     return payload as T;
 }
@@ -122,12 +123,12 @@ function newAPISetupURL() {
     if (!base) return "";
     try {
         const url = new URL(base);
-        url.pathname = `${url.pathname.replace(/\/+$/, "")}/keys`;
+        url.pathname = `${url.pathname.replace(/\/+$/, "")}/console/token`;
         url.search = "";
         url.hash = "";
         return url.toString();
     } catch {
-        return `${base.replace(/\/+$/, "")}/keys`;
+        return `${base.replace(/\/+$/, "")}/console/token`;
     }
 }
 
