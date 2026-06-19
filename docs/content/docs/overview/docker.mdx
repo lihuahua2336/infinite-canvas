@@ -27,8 +27,11 @@ http://localhost:3000
 如果需要基于当前源码构建镜像：
 
 ```bash
-docker compose -f docker-compose.local.yml up -d --build
+docker build --build-arg NEXT_PUBLIC_DOC_URL=https://doc.eggai.icu -t infinite-canvas .
+docker run --rm -p 3000:3000 --env-file .env infinite-canvas
 ```
+
+`NEXT_PUBLIC_DOC_URL` 会被写入浏览器端 JS，必须在构建镜像时传入；`docker-compose.yml` 里的 `.env` 只会影响容器运行时变量，不能修改已经构建好的前端文档入口。
 
 ## 文档站镜像
 

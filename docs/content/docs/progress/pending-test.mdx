@@ -18,5 +18,6 @@ description: 当前版本已实现但仍需人工验证的变更项
 - AI 渠道代理：渠道配置新增“前端直连 / Next.js 转发”，当 AI 接口浏览器预检跨域失败时，切到 Next.js 转发后生图、图生图、文本工具流、音频、视频和模型拉取应改走同源 `/api/ai-proxy`。
 - OpenAI 兼容生图：文生图和图生图 / 编辑默认先尝试 `stream: true` 流式请求，接口明确不支持流式参数时自动回退原同步请求。
 - Docker 部署：主应用和文档站发布镜像部署统一读取根目录 `.env`；主应用 `docker-compose.yml` 可通过 `APP_PORT` 配置对外端口。
-- 生产镜像发布：推送 `v1.0.1` tag 后，GitHub Actions 应发布 `ghcr.io/lihuahua2336/infinite-canvas:v1.0.1`、`ghcr.io/lihuahua2336/infinite-canvas:latest` 和对应文档站镜像。
+- Docker 构建文档入口：推送新 tag 后，主应用 GitHub Actions 应使用 `NEXT_PUBLIC_DOC_URL=https://doc.eggai.icu` 构建，页面右上角和画布文档入口应打开 `https://doc.eggai.icu`。
+- 生产镜像发布：推送 `v1.0.2` tag 后，GitHub Actions 应发布 `ghcr.io/lihuahua2336/infinite-canvas:v1.0.2` 和 `ghcr.io/lihuahua2336/infinite-canvas:latest`。
 - 回归确认：手动多渠道配置、URL 参数导入、拉取模型、WebDAV 同步、提示词和画布功能不应回退。

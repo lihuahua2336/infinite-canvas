@@ -4,6 +4,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      docs_url:
+        description: "Build-time docs URL embedded in the web client"
+        required: false
+        default: "https://doc.eggai.icu"
 
 permissions:
   contents: read
@@ -11,6 +16,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/lihuahua2336/infinite-canvas
+  NEXT_PUBLIC_DOC_URL: ${{ inputs.docs_url || 'https://doc.eggai.icu' }}
 
 jobs:
   meta:
@@ -58,6 +64,8 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ needs.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_DOC_URL=${{ env.NEXT_PUBLIC_DOC_URL }}
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=app-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=app-${{ matrix.arch }}

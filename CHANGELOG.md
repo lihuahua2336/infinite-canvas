@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.0.2 - 2026-06-19
+
++ [发布] 主应用 Docker 构建流程新增 `NEXT_PUBLIC_DOC_URL` build arg，GitHub Actions tag 发布和手动发布会在构建阶段写入文档入口地址。
++ [优化] 主应用镜像默认文档入口改为 `https://doc.eggai.icu`，避免生产镜像继续内联旧的 `docs.canvas.best`。
++ [文档] Docker 部署说明补充构建时变量和运行时 `.env` 的区别：`NEXT_PUBLIC_*` 会写入浏览器端 JS，修改运行时 `.env` 不能改变已构建的前端链接。
+
 ## v1.0.1 - 2026-06-19
 
 + [发布] 生产部署统一使用根目录 `docker-compose.yml` 加 `.env`，`docker-compose.yml` 会显式读取 `.env` 并支持通过 `APP_PORT` 配置对外端口；文档站 Docker Compose 同步读取根目录 `.env`。

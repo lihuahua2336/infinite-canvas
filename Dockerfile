@@ -1,6 +1,9 @@
 # 构建 Next.js 前端产物。
 FROM oven/bun:1.3.13 AS web-build
 
+ARG NEXT_PUBLIC_DOC_URL=https://doc.eggai.icu
+ENV NEXT_PUBLIC_DOC_URL=$NEXT_PUBLIC_DOC_URL
+
 WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache
