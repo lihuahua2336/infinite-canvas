@@ -26,6 +26,7 @@
 + [新增] 渠道兼容Gemini格式。
 + [新增] 新增 Logto 登录门禁和 New API 轻代理自动渠道配置。
 + [新增] Logto / New API 配置文档，包含完整 `.env` 模板、Logto OIDC 应用、API Resource、New API OIDC 和 ecosystem 校验配置。
++ [新增] 新增Codex App插件支持。
 + [优化] 登录、登出和 Logto 回调跳转优先使用 `APP_PUBLIC_URL`，适配 Docker 和反向代理部署，避免跳到容器内部地址。
 + [优化] 本地 Docker Compose 改为宿主机 `3003` 端口并传入 `APP_PUBLIC_URL`，方便和本地 New API 服务并行调试。
 + [说明] New API 自动配置会使用当前 Logto 用户的 resource token 读取 `/api/ecosystem/me`、`/api/ecosystem/models` 和 `/api/ecosystem/tokens`，不会使用固定管理员密钥读取全局数据。
