@@ -66,6 +66,8 @@ export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const DEFAULT_TEXT_MODEL_NAME = "gpt-5.5";
+const DEFAULT_IMAGE_MODEL_NAME = "gpt-image-2";
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -233,9 +235,9 @@ export const useConfigStore = create<ConfigStore>()(
                         proxyMode: normalizeProxyMode(config.proxyMode),
                         channels,
                         models,
-                        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
+                        imageModel: normalizeDefaultModel(normalizeModelOptionValue(config.imageModel || config.model, channels), filterModelsByCapability(models, "image"), DEFAULT_IMAGE_MODEL_NAME),
                         videoModel: normalizeModelOptionValue(config.videoModel || "grok-imagine-video", channels),
-                        textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
+                        textModel: normalizeDefaultModel(normalizeModelOptionValue(config.textModel || config.model, channels), filterModelsByCapability(models, "text"), DEFAULT_TEXT_MODEL_NAME),
                         audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
@@ -361,10 +363,10 @@ export function configWithChannels(config: AiConfig, channels: ModelChannel[]): 
         videoModels,
         textModels,
         audioModels,
-        model: normalizeDefaultModel(config.model, textModels),
-        imageModel: normalizeDefaultModel(config.imageModel, imageModels),
+        model: normalizeDefaultModel(config.model, textModels, DEFAULT_TEXT_MODEL_NAME),
+        imageModel: normalizeDefaultModel(config.imageModel, imageModels, DEFAULT_IMAGE_MODEL_NAME),
         videoModel: normalizeDefaultModel(config.videoModel, videoModels),
-        textModel: normalizeDefaultModel(config.textModel, textModels),
+        textModel: normalizeDefaultModel(config.textModel, textModels, DEFAULT_TEXT_MODEL_NAME),
         audioModel: normalizeDefaultModel(config.audioModel, audioModels),
     };
 }
@@ -399,10 +401,10 @@ function applyNewAPITokenAsChannel(config: AiConfig, newAPIConfig: NewAPIConfigR
         videoModels,
         textModels,
         audioModels,
-        model: preferChannelModel(textModels, channelId, nextConfig.model),
-        imageModel: preferChannelModel(imageModels, channelId, nextConfig.imageModel),
+        model: preferChannelModel(textModels, channelId, nextConfig.model, DEFAULT_TEXT_MODEL_NAME),
+        imageModel: preferChannelModel(imageModels, channelId, nextConfig.imageModel, DEFAULT_IMAGE_MODEL_NAME),
         videoModel: preferChannelModel(videoModels, channelId, nextConfig.videoModel),
-        textModel: preferChannelModel(textModels, channelId, nextConfig.textModel),
+        textModel: preferChannelModel(textModels, channelId, nextConfig.textModel, DEFAULT_TEXT_MODEL_NAME),
         audioModel: preferChannelModel(audioModels, channelId, nextConfig.audioModel),
     };
 }
@@ -412,9 +414,10 @@ function resolveNewAPIToken(newAPIConfig: NewAPIConfigResponse, tokenId?: string
     return newAPIConfig.tokens.find((token) => String(token.tokenId) === requested) || newAPIConfig.tokens[0] || null;
 }
 
-function preferChannelModel(models: string[], channelId: string, current: string) {
+function preferChannelModel(models: string[], channelId: string, current: string, preferredModelName?: string) {
     if (current && models.includes(current) && decodeChannelModel(current)?.channelId === channelId) return current;
-    return models.find((model) => decodeChannelModel(model)?.channelId === channelId) || normalizeDefaultModel(current, models);
+    const channelModels = models.filter((model) => decodeChannelModel(model)?.channelId === channelId);
+    return preferredModelOption(channelModels, preferredModelName) || channelModels[0] || normalizeDefaultModel(current, models, preferredModelName);
 }
 
 function keepOrSuggest(current: string[], suggested: string[], allModels: string[]) {
@@ -423,9 +426,15 @@ function keepOrSuggest(current: string[], suggested: string[], allModels: string
     return kept.length ? kept : suggested;
 }
 
-function normalizeDefaultModel(value: string, options: string[]) {
+function normalizeDefaultModel(value: string, options: string[], preferredModelName?: string) {
     if (options.includes(value)) return value;
-    return options[0] || value;
+    return preferredModelOption(options, preferredModelName) || options[0] || value;
+}
+
+function preferredModelOption(options: string[], preferredModelName?: string) {
+    const preferred = preferredModelName?.trim().toLowerCase();
+    if (!preferred) return "";
+    return options.find((model) => modelOptionName(model).toLowerCase() === preferred) || "";
 }
 
 function normalizeChannels(config: AiConfig) {
