@@ -18,6 +18,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 设置弹窗：New API 区块的“前往 New API 配置”会打开 `/console/token`， “关于”按钮会展示原项目、本项目仓库、许可证和版本信息。
 - AI 渠道代理：渠道配置新增“前端直连 / Next.js 转发”，当 AI 接口浏览器预检跨域失败时，切到 Next.js 转发后生图、图生图、文本工具流、音频、视频和模型拉取应改走同源 `/api/ai-proxy`。
 - OpenAI 兼容生图：文生图和图生图 / 编辑默认先尝试 `stream: true` 流式请求，接口明确不支持流式参数时自动回退原同步请求。
+- 图生图流式兼容：部分 OpenAI 兼容渠道在 `/v1/images/edits` 的 `text/event-stream` 中会返回包装后的图片事件；当前前端应能正确识别这些图片，不再出现接口实际有图但前端报“接口没有返回图片”。
 - Docker 部署：主应用和文档站发布镜像部署统一读取根目录 `.env`；主应用 `docker-compose.yml` 可通过 `APP_PORT` 配置对外端口。
 - Docker 构建文档入口：推送新 tag 后，主应用 GitHub Actions 应使用 `NEXT_PUBLIC_DOC_URL=https://doc.eggai.icu` 构建，页面右上角和画布文档入口应打开 `https://doc.eggai.icu`。
 - 生产镜像发布：推送 `v1.0.3` tag 后，GitHub Actions 应发布 `ghcr.io/lihuahua2336/infinite-canvas:v1.0.3` 和 `ghcr.io/lihuahua2336/infinite-canvas:latest`。

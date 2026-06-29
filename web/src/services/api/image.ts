@@ -74,7 +74,7 @@ type ImageApiResponse = {
     msg?: string;
 };
 type ImageRequestBody = Record<string, unknown>;
-type ImageStreamState = { buffer: string; images: Array<{ id: string; dataUrl: string }>; payload?: ImageApiResponse; error?: string };
+type ImageStreamState = { buffer: string; images: Array<{ id: string; dataUrl: string }>; payload?: unknown; error?: string };
 type GeminiPart = {
     text?: string;
     inlineData?: { mimeType?: string; data?: string };
@@ -193,15 +193,29 @@ function resolveImageDataUrl(item: Record<string, unknown>) {
     return null;
 }
 
-function parseImagePayload(payload: ImageApiResponse) {
-    if (typeof payload.code === "number" && payload.code !== 0) {
+function hasImageField(item: Record<string, unknown>) {
+    return Boolean(stringValue(item.b64_json) || stringValue(item.partial_image_b64) || stringValue(item.partial_image) || stringValue(item.image) || stringValue(item.url));
+}
+
+function imagePayloadItems(payload: unknown) {
+    if (Array.isArray(payload)) return payload.filter(isRecord);
+    if (!isRecord(payload)) return [];
+    if (Array.isArray(payload.data)) return payload.data.filter(isRecord);
+    if (Array.isArray(payload.images)) return payload.images.filter(isRecord);
+    if (hasImageField(payload)) return [payload];
+    if (isRecord(payload.data)) return [payload.data];
+    if (isRecord(payload.image)) return [payload.image];
+    return [];
+}
+
+function parseImagePayload(payload: unknown) {
+    if (isRecord(payload) && responseErrorMessage(payload)) {
+        throw new Error(responseErrorMessage(payload) || "请求失败");
+    }
+    if (isRecord(payload) && typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
-    const images =
-        payload.data
-            ?.map(resolveImageDataUrl)
-            .filter((value): value is string => Boolean(value))
-            .map((dataUrl) => ({ id: nanoid(), dataUrl })) || [];
+    const images = imagePayloadItems(payload).map(resolveImageDataUrl).filter((value): value is string => Boolean(value)).map((dataUrl) => ({ id: nanoid(), dataUrl }));
 
     if (images.length === 0) {
         throw new Error("接口没有返回图片");
@@ -372,10 +386,10 @@ function consumeImageStreamBlock(block: string, state: ImageStreamState) {
         .join("\n")
         .trim();
     if (!data || data === "[DONE]") return;
-    const event = JSON.parse(data) as Record<string, unknown>;
+    const event = JSON.parse(data) as unknown;
     const errorMessage = responseErrorMessage(event);
     if (errorMessage) state.error = errorMessage;
-    if (Array.isArray(event.data)) state.payload = event as ImageApiResponse;
+    if (imagePayloadItems(event).length) state.payload = event;
     collectStreamImage(event, state);
 }
 
@@ -393,20 +407,14 @@ function consumeImageStreamText(state: ImageStreamState, text: string, flush = f
     }
 }
 
-function collectStreamImage(event: Record<string, unknown>, state: ImageStreamState) {
-    const source = streamImageSource(event);
-    const b64 = stringValue(source.b64_json) || stringValue(source.partial_image_b64) || stringValue(source.partial_image) || stringValue(source.image);
-    const url = stringValue(source.url);
-    const dataUrl = b64 ? `data:image/${IMAGE_OUTPUT_FORMAT};base64,${b64}` : url;
-    if (!dataUrl) return;
-    state.images.push({ id: nanoid(), dataUrl });
-}
-
-function streamImageSource(event: Record<string, unknown>) {
-    if (stringValue(event.b64_json) || stringValue(event.partial_image_b64) || stringValue(event.partial_image) || stringValue(event.image) || stringValue(event.url)) return event;
-    if (isRecord(event.data)) return event.data;
-    if (isRecord(event.image)) return event.image;
-    return event;
+function collectStreamImage(event: unknown, state: ImageStreamState) {
+    imagePayloadItems(event).forEach((source) => {
+        const b64 = stringValue(source.b64_json) || stringValue(source.partial_image_b64) || stringValue(source.partial_image) || stringValue(source.image);
+        const url = stringValue(source.url);
+        const dataUrl = b64 ? `data:image/${IMAGE_OUTPUT_FORMAT};base64,${b64}` : url;
+        if (!dataUrl) return;
+        state.images.push({ id: nanoid(), dataUrl });
+    });
 }
 
 function shouldFallbackImageStream(status: number, message: string) {
