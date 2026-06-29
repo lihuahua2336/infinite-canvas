@@ -40,11 +40,11 @@ export default function LoginPage() {
                 <section className="rounded-lg border border-stone-200 bg-background p-6 shadow-sm dark:border-stone-800">
                     <div className="mb-5">
                         <h1 className="text-xl font-semibold text-stone-950 dark:text-stone-100">登录后继续使用</h1>
-                        <p className="mt-2 text-sm leading-6 text-stone-500">请使用 Logto 登录。登录后会回到刚才访问的页面，并可在设置中自动读取 New API 令牌和模型。</p>
+                        <p className="mt-2 text-sm leading-6 text-stone-500">请使用 EggAi登录。登录后会回到刚才访问的页面，并可在设置中自动读取 New API 令牌和模型。</p>
                     </div>
                     {error ? <Alert className="mb-4" type="error" showIcon message={error} /> : null}
                     <Button type="primary" size="large" block icon={<LogIn className="size-4" />} href={loginUrl}>
-                        使用 Logto 登录
+                        使用 EggAi登录
                     </Button>
                 </section>
             </div>

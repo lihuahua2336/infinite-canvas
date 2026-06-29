@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { clearSessionCookie, readSession, refreshNewAPIToken, setSessionCookie } from "@/lib/server-auth";
+import { readSession, refreshNewAPIToken, setSessionCookie } from "@/lib/server-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,14 +56,12 @@ export async function GET(request: NextRequest) {
 
     const session = readSession(request);
     if (!session) {
-        result.message = "请先使用 Logto 登录";
+        result.message = "请先使用 EggAi登录";
         return Response.json(result, { status: 401 });
     }
     const refreshed = await refreshNewAPIToken(session).catch(() => ({ session, refreshed: false, ok: false }));
     if (!refreshed.ok || !refreshed.session.newAPIToken?.accessToken) {
-        const response = NextResponse.json({ ...result, message: `请重新登录以授权访问 ${displayName}` }, { status: 401 });
-        clearSessionCookie(response);
-        return response;
+        return NextResponse.json({ ...result, message: `授权已过期，正在静默重试 ${displayName}` }, { status: 401 });
     }
 
     try {
@@ -78,9 +76,7 @@ export async function GET(request: NextRequest) {
         return response;
     } catch (error) {
         if (error instanceof NewAPIRequestError && error.status === 401) {
-            const response = NextResponse.json({ ...result, message: `请重新登录以授权访问 ${displayName}` }, { status: 401 });
-            clearSessionCookie(response);
-            return response;
+            return NextResponse.json({ ...result, message: `授权已过期，正在静默重试 ${displayName}` }, { status: 401 });
         }
         result.message = error instanceof Error ? error.message : `${displayName} 读取失败`;
         const response = NextResponse.json(result);

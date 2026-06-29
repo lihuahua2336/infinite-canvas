@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
     const config = getAuthConfig();
     const redirect = safeRedirectPath(request.nextUrl.searchParams.get("redirect"));
+    const prompt = (request.nextUrl.searchParams.get("prompt") || "").trim();
     if (config.missing.length) return NextResponse.redirect(appURL(request, `/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(`${config.missing.join("、")} 未配置`)}`));
 
     try {
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
         url.searchParams.set("nonce", nonce);
         url.searchParams.set("code_challenge", codeChallenge(codeVerifier));
         url.searchParams.set("code_challenge_method", "S256");
+        if (prompt) url.searchParams.set("prompt", prompt);
         const audience = newAPIAudience();
         if (audience) url.searchParams.set("resource", audience);
 
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
         setLogtoPendingCookie(response, { state, nonce, codeVerifier, redirect, createdAt: Date.now() }, request);
         return response;
     } catch (error) {
-        const message = error instanceof Error ? error.message : "Logto 登录初始化失败";
+        const message = error instanceof Error ? error.message : "EggAi登录初始化失败";
         return NextResponse.redirect(appURL(request, `/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(message)}`));
     }
 }

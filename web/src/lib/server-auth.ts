@@ -239,7 +239,7 @@ export async function refreshNewAPIToken(session: AuthSession) {
 }
 
 export async function sessionFromLogtoToken(discovery: OIDCDiscovery, token: OIDCTokenResponse, nonce: string) {
-    if (!token.access_token || !token.id_token) throw new Error("Logto 登录失败：缺少令牌");
+    if (!token.access_token || !token.id_token) throw new Error("EggAi登录失败：缺少令牌");
     const idProfile = await verifyIDToken(token.id_token, discovery, nonce);
     const userInfo = await fetchUserInfo(discovery.userinfo_endpoint, token.access_token);
     const profile = mergeProfile(idProfile, userInfo);
@@ -296,9 +296,9 @@ async function verifyIDToken(idToken: string, discovery: OIDCDiscovery, nonce: s
     const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud || ""];
     if (!audience.includes(clientId)) throw new Error("Logto ID Token Audience 无效");
     const now = Math.floor(Date.now() / 1000);
-    if (!payload.exp || now > payload.exp + CLOCK_SKEW_SECONDS) throw new Error("Logto 登录状态已过期");
+    if (!payload.exp || now > payload.exp + CLOCK_SKEW_SECONDS) throw new Error("EggAi登录状态已过期");
     if (payload.nbf && now + CLOCK_SKEW_SECONDS < payload.nbf) throw new Error("Logto ID Token 尚未生效");
-    if (payload.nonce !== nonce) throw new Error("Logto 登录状态校验失败");
+    if (payload.nonce !== nonce) throw new Error("EggAi登录状态校验失败");
     const key = await findJWK(discovery.jwks_uri, header.kid);
     const valid = verifyJWTSignature(header.alg, key, `${encodedHeader}.${encodedPayload}`, encodedSignature);
     if (!valid) throw new Error("Logto ID Token 签名无效");

@@ -9,10 +9,10 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 配置与用户偏好：每个模型渠道新增 OpenAI / Gemini 调用格式选择，默认 OpenAI，切换默认格式时同步更新默认 Base URL；渠道 Tab 增加紧凑醒目的提醒，说明模型是否可选需要到“模型”Tab 选择。
 - Gemini 调用格式：支持拉取 Gemini 模型列表，并用于文本问答、在线 Agent 工具调用、基础生图和图生图请求。
 - 音频和视频生成：选择 Gemini 调用格式时先给出不支持提示，仍需使用 OpenAI 兼容渠道。
-- Logto 登录门禁：未登录访问 `/`、`/canvas`、`/image`、`/video`、`/prompts`、`/assets` 会跳转 `/login?redirect=...`，登录成功后返回原页面，刷新后仍保持登录。
+- EggAi登录门禁：未登录访问 `/`、`/canvas`、`/image`、`/video`、`/prompts`、`/assets` 会跳转 `/login?redirect=...`，登录成功后返回原页面，刷新后仍保持登录。
 - Logto 本地回调地址：Docker 或代理映射到 `http://localhost:3003` 时，登录回调和登录错误跳转应使用 `APP_PUBLIC_URL`，不再跳到容器内部的 `http://0.0.0.0:3000`。
 - New API 轻代理：登录后 `/api/new-api/config` 能读取 New API 模型和令牌，配置弹窗打开时自动导入第一个可用令牌为本地渠道，并可手动切换令牌。
-- New API 登录过期：Logto / New API 授权过期或刷新失败时，打开设置刷新配置应清除前端登录态并跳回登录流程，不应继续显示已登录但无法更新 API 配置。
+- New API 静默重授权：Logto / New API 授权过期或刷新失败时，打开设置刷新配置应自动跳转 `/api/auth/logto/authorize?prompt=none` 静默重试，不要清掉整站登录态，也不要先弹错误提示。
 - Logto / New API 配置文档：`/docs/backend/logto-new-api-oidc` 能打开，并用 `example.com` 示例说明完整 `.env`、Infinite Canvas、Logto、New API OIDC 和 ecosystem 参数。
 - 文档站在线体验入口：文档首页按钮、顶部导航和项目介绍侧边栏的“在线体验”应跳转到 `/go/app`，并按 `APP_PUBLIC_URL` 跳到实际部署的主应用地址。
 - 设置弹窗：New API 区块的“前往 New API 配置”会打开 `/console/token`， “关于”按钮会展示原项目、本项目仓库、许可证和版本信息。

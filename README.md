@@ -42,7 +42,7 @@
 
 ## 快速开始
 
-推荐直接导入仓库到 Vercel，根目录已提供 `vercel.json`，会构建 `web/`。当前业务页面默认需要 Logto 登录后使用；AI API Key、Base URL、画布、素材和生成记录仍默认保存在浏览器本地。
+推荐直接导入仓库到 Vercel，根目录已提供 `vercel.json`，会构建 `web/`。当前业务页面默认需要 EggAi登录后使用；AI API Key、Base URL、画布、素材和生成记录仍默认保存在浏览器本地。
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git

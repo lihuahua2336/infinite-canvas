@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     if (error) return responseWithError(error);
     const code = request.nextUrl.searchParams.get("code") || "";
     const state = request.nextUrl.searchParams.get("state") || "";
-    if (!pending || !code || pending.state !== state) return responseWithError("Logto 登录状态校验失败");
+    if (!pending || !code || pending.state !== state) return responseWithError("EggAi登录状态校验失败");
 
     const config = getAuthConfig();
     if (config.missing.length) return responseWithError(`${config.missing.join("、")} 未配置`);
@@ -32,6 +32,6 @@ export async function GET(request: NextRequest) {
         clearLogtoPendingCookie(response);
         return response;
     } catch (err) {
-        return responseWithError(err instanceof Error ? err.message : "Logto 登录失败");
+        return responseWithError(err instanceof Error ? err.message : "EggAi登录失败");
     }
 }

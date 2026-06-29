@@ -12,7 +12,6 @@ import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webd
 import { APP_VERSION } from "@/constant/env";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { configWithChannels, createModelChannel, defaultBaseUrlForApiFormat, modelOptionLabel, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ApiProxyMode, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
-import { useUserStore } from "@/stores/use-user-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -86,8 +85,8 @@ export function AppConfigModal() {
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
-    const clearUserSession = useUserStore((state) => state.clearSession);
     const autoAppliedNewAPI = useRef("");
+    const reauthorizingRef = useRef(false);
     const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
     const webdavReady = Boolean(webdav.url.trim());
     const serviceDisplayName = newAPIConfig?.displayName || "New API";
@@ -115,17 +114,21 @@ export function AppConfigModal() {
             if (showMessage) message.success(next.message || `${next.displayName || "New API"} 配置已刷新`);
             return next;
         } catch (error) {
-            if (error instanceof NewAPIConfigError && error.status === 401) clearUserSession();
+            if (error instanceof NewAPIConfigError && error.status === 401 && !reauthorizingRef.current) {
+                reauthorizingRef.current = true;
+                const redirect = `${window.location.pathname || "/"}${window.location.search || ""}`;
+                window.location.replace(`/api/auth/logto/authorize?redirect=${encodeURIComponent(redirect)}&prompt=none`);
+            }
             const fallback = {
                 configured: false,
                 displayName: "New API",
                 loginUrl: "",
-                message: error instanceof Error ? error.message : "读取 New API 配置失败",
+                message: error instanceof NewAPIConfigError && error.status === 401 ? "" : error instanceof Error ? error.message : "读取 New API 配置失败",
                 models: [],
                 tokens: [],
             };
             setNewAPIConfig(fallback);
-            if (showMessage) message.error(fallback.message);
+            if (showMessage && fallback.message) message.error(fallback.message);
             return fallback;
         } finally {
             setLoadingNewAPIConfig(false);

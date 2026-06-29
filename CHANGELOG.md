@@ -24,7 +24,7 @@
 
 + [发布] 生产镜像迁移到 `ghcr.io/lihuahua2336/infinite-canvas`，版本 tag 构建会发布 `v1.0.0`、`latest` 和 sha 标签；文档站镜像迁移到 `ghcr.io/lihuahua2336/infinite-canvas-docs`。
 + [新增] 渠道兼容Gemini格式。
-+ [新增] 新增 Logto 登录门禁和 New API 轻代理自动渠道配置。
++ [新增] 新增 EggAi登录门禁和 New API 轻代理自动渠道配置。
 + [新增] Logto / New API 配置文档，包含完整 `.env` 模板、Logto OIDC 应用、API Resource、New API OIDC 和 ecosystem 校验配置。
 + [新增] 新增Codex App插件支持。
 + [优化] 登录、登出和 Logto 回调跳转优先使用 `APP_PUBLIC_URL`，适配 Docker 和反向代理部署，避免跳到容器内部地址。
