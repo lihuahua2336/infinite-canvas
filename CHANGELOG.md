@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.0.3 - 2026-06-29
+
++ [新增] 新增 Codex App 插件支持和本地 Agent 集成文档，便于从 Codex 直接打开并操作画布。
++ [优化] New API 配置支持默认本地直连和自定义显示名称，登录入口文案统一为 EggAi登录。
++ [修复] New API 授权失效时改为触发 Logto 静默重授权，不再直接清空整站登录态。
+
 ## v1.0.2 - 2026-06-19
 
 + [发布] 主应用 Docker 构建流程新增 `NEXT_PUBLIC_DOC_URL` build arg，GitHub Actions tag 发布和手动发布会在构建阶段写入文档入口地址。
