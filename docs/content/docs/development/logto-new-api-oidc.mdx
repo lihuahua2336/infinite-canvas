@@ -1,0 +1,133 @@
+---
+title: Logto / New API 配置
+description: Infinite Canvas 使用 EggAi SPA 登录并直连 New API 的配置说明
+---
+
+# Logto / New API 配置
+
+Infinite Canvas 是纯前端 Vite 单页应用。EggAi 登录使用 Logto 官方 React SDK 执行 Authorization Code + PKCE，New API 请求由浏览器携带当前用户的 resource access token 直接发出。
+
+因此 Infinite Canvas 不需要、也不能配置 `LOGTO_CLIENT_SECRET`、`SESSION_SECRET` 或服务端 session cookie。所有注入页面的环境变量都会被浏览器看到，请勿放入任何服务端密钥。
+
+## Infinite Canvas 环境变量
+
+Docker 部署可从 `.env.example` 开始：
+
+```env
+APP_PORT=3000
+
+LOGTO_ISSUER=https://auth.example.com
+LOGTO_CLIENT_ID=<logto-spa-client-id>
+LOGTO_SCOPE=openid profile email
+
+NEW_API_PUBLIC_URL=https://api.example.com
+NEW_API_BASE_URL=https://api.example.com
+NEW_API_DISPLAY_NAME=New API
+NEW_API_LOGTO_AUDIENCE=https://api.example.com
+NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read
+```
+
+- `LOGTO_ISSUER` 可填写 Logto 租户地址，也兼容以 `/oidc` 结尾的 Issuer。
+- `LOGTO_CLIENT_ID` 必须来自 Logto 的单页应用，不能使用需要 client secret 的传统 Web 应用。
+- `NEW_API_PUBLIC_URL` 是浏览器实际访问 New API 的地址，存在时优先使用。
+- `NEW_API_BASE_URL` 是备用地址，也必须能被浏览器访问。
+- `NEW_API_LOGTO_AUDIENCE` 必须与 Logto API Resource 和 New API 校验配置完全一致。
+- `NEW_API_LOGTO_SCOPE` 是向该 Resource 申请的权限。
+
+Docker 镜像启动时会把这些值写入 `/config.js`。自行构建静态站点时，可使用对应的 `VITE_` 前缀变量，例如 `VITE_LOGTO_ISSUER`、`VITE_LOGTO_CLIENT_ID` 和 `VITE_NEW_API_PUBLIC_URL`。
+
+GitHub Pages workflow 会从同名 Repository variables 读取这些公开配置；Vercel 部署则需要在项目环境变量中填写对应的 `VITE_` 变量。
+
+## Logto 单页应用
+
+在 Logto Console 新建 Single-page application，Client ID 填入 `LOGTO_CLIENT_ID`。
+
+以 `https://canvas.example.com` 为部署地址时，登记以下 URI：
+
+```text
+Redirect URI: https://canvas.example.com/callback
+Post sign-out redirect URI: https://canvas.example.com/login
+Allowed origin: https://canvas.example.com
+```
+
+本地开发对应：
+
+```text
+Redirect URI: http://localhost:3000/callback
+Post sign-out redirect URI: http://localhost:3000/login
+Allowed origin: http://localhost:3000
+```
+
+回调地址必须精确匹配协议、域名、端口和路径。Logto 还需要允许来自该站点的浏览器请求，否则 SDK 无法读取 OIDC 配置或交换 PKCE authorization code。
+
+## Logto API Resource
+
+为 New API 创建 API Resource，示例 audience：
+
+```text
+https://api.example.com
+```
+
+添加 Infinite Canvas 读取 ecosystem 接口所需的权限：
+
+```text
+ecosystem:me
+ecosystem:models:read
+ecosystem:tokens:read
+```
+
+将同一个 audience 写入 Infinite Canvas 的 `NEW_API_LOGTO_AUDIENCE` 与 New API 的 `LOGTO_AUDIENCE`。
+
+## New API 配置
+
+New API 自己的网页登录仍可使用独立的 Logto OIDC 应用和服务端 client secret。该 secret 只属于 New API 服务端，不要注入 Infinite Canvas。
+
+New API 的 ecosystem token 校验可按部署环境配置：
+
+```env
+LOGTO_ECOSYSTEM_ENABLED=true
+LOGTO_ISSUER=https://auth.example.com/oidc
+LOGTO_AUDIENCE=https://api.example.com
+LOGTO_JWKS_URI=https://auth.example.com/oidc/jwks
+LOGTO_REQUIRED_SCOPES=
+ECOSYSTEM_BASE_URL=https://api.example.com/v1
+```
+
+Infinite Canvas 会依次请求：
+
+```text
+GET https://api.example.com/api/ecosystem/me
+GET https://api.example.com/api/ecosystem/models
+GET https://api.example.com/api/ecosystem/tokens
+Authorization: Bearer <Logto resource access token>
+```
+
+New API 必须为浏览器请求配置 CORS，至少允许 Infinite Canvas 的真实来源、`Authorization` 请求头以及 `GET`、`OPTIONS` 方法。例如：
+
+```http
+Access-Control-Allow-Origin: https://canvas.example.com
+Access-Control-Allow-Headers: Authorization, Content-Type
+Access-Control-Allow-Methods: GET, OPTIONS
+```
+
+不要同时使用通配来源和凭据模式。本链路使用 Bearer token，不依赖跨站 cookie。
+
+## 登录与导入流程
+
+1. 未登录访问业务页面时，React Router 跳转到 `/login?redirect=...`。
+2. Logto SDK 生成 PKCE verifier、challenge 和 state，并跳转 EggAi 登录页。
+3. Logto 回到 `/callback` 后，SDK 校验 state 并在浏览器中交换 token。
+4. 设置页调用 `getAccessToken(NEW_API_LOGTO_AUDIENCE)` 获取 resource token。
+5. 浏览器直连 New API，读取当前用户的模型和令牌，再写入本地渠道配置。
+
+Access token 过期时由 Logto SDK 使用 refresh token 更新，不需要 Infinite Canvas 服务端参与。
+
+## 排查清单
+
+- Logto 应用类型是否为 SPA，而不是传统 Web 应用。
+- `/callback`、`/login` 和 Allowed origin 是否与浏览器地址完全一致。
+- `LOGTO_ISSUER` 是否能从浏览器访问，且 Logto 是否允许当前来源。
+- 三处 audience 是否完全一致：Logto API Resource、`NEW_API_LOGTO_AUDIENCE`、New API `LOGTO_AUDIENCE`。
+- access token 是否包含所需 ecosystem scopes。
+- New API 是否正确响应浏览器的 CORS 预检请求。
+- HTTPS 页面是否误配了 HTTP 的 Logto 或 New API 地址，导致浏览器拦截混合内容。

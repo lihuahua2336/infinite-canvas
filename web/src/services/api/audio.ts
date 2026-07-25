@@ -1,9 +1,9 @@
 import axios from "axios";
 
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
-import { aiApiRequest } from "@/services/api/ai-proxy";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { runModelPlugin } from "./model-plugin";
 
 type RequestOptions = { signal?: AbortSignal };
 
@@ -17,14 +17,32 @@ function aiHeaders(config: AiConfig) {
 export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<Blob> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
-    assertAudioConfig(requestConfig, model);
     const format = normalizeAudioFormatValue(config.audioFormat);
+    const script = resolveModelScript(config, config.model || config.audioModel);
+    if (script) {
+        if (!model) throw new Error("请先配置音频模型");
+        if (!requestConfig.baseUrl.trim()) throw new Error("请先配置 Base URL");
+        if (!requestConfig.apiKey.trim()) throw new Error("请先配置 API Key");
+        try {
+            const result = await runModelPlugin({
+                capability: "audio",
+                script,
+                config: requestConfig,
+                prompt,
+                params: { voice: normalizeAudioVoiceValue(config.audioVoice), format, speed: normalizeAudioSpeedValue(config.audioSpeed), instructions: config.audioInstructions.trim() },
+                signal: options?.signal,
+            });
+            return await audioPluginBlob(result, format);
+        } catch (error) {
+            throw new Error(readAxiosError(error, "音频生成失败"));
+        }
+    }
+    assertAudioConfig(requestConfig, model);
     const instructions = config.audioInstructions.trim();
 
     try {
-        const request = aiApiRequest(requestConfig, "/audio/speech", "POST", aiHeaders(requestConfig));
         const response = await axios.post<Blob>(
-            request.url,
+            buildApiUrl(requestConfig.baseUrl, "/audio/speech"),
             {
                 model,
                 input: prompt,
@@ -33,13 +51,27 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
                 speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
                 ...(instructions ? { instructions } : {}),
             },
-            { headers: request.headers, responseType: "blob", signal: options?.signal },
+            { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
         );
         await assertAudioBlob(response.data);
         return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
     } catch (error) {
         throw new Error(readAxiosError(error, "音频生成失败"));
     }
+}
+
+async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {
+    if (result instanceof Blob) return result.type.startsWith("audio/") ? result : new Blob([result], { type: audioMimeType(format) });
+    let source = "";
+    if (typeof result === "string") source = result;
+    else if (result && typeof result === "object") {
+        const record = result as Record<string, unknown>;
+        source = typeof record.b64_json === "string" ? record.b64_json : typeof record.data === "string" ? record.data : typeof record.url === "string" ? record.url : "";
+    }
+    if (!source) throw new Error("模型调用脚本没有返回音频");
+    const url = source.startsWith("data:") || /^https?:/i.test(source) ? source : `data:${audioMimeType(format)};base64,${source}`;
+    const blob = await (await fetch(url)).blob();
+    return blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
 }
 
 export async function storeGeneratedAudio(blob: Blob, format = "mp3"): Promise<UploadedFile> {

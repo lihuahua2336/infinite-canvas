@@ -1,0 +1,11 @@
+{
+  "title": "开发文档",
+  "root": true,
+  "defaultOpen": true,
+  "pages": [
+    "local-development",
+    "logto-new-api-oidc",
+    "canvas-data-structure",
+    "local-codex-canvas"
+  ]
+}
