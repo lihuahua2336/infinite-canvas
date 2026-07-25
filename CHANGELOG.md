@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.10.1 - 2026-07-25
+
 + [新增] 支持 EggAi / Logto 单页应用 PKCE 登录，并在登录后自动导入当前用户的 New API 模型与令牌。
 + [调整] 当前 fork 回归上游 Vite + React Router 版本线，移除 Next.js 服务端认证、会话与 AI 代理代码。
 + [调整] New API 改为浏览器携带 Logto resource access token 直连，并补充 SPA 与 CORS 部署说明。

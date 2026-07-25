@@ -82,3 +82,17 @@
 - 当前画布项目和“我的素材”主要保存在浏览器本地，不要在文档中误写成已支持云同步。
 - 当前 AI API Key 存在浏览器本地，并由前端直接请求 OpenAI 兼容接口；涉及安全说明时要写清楚。
 - Docker 静态资源路径目前仍是待办项，文档中不要过度承诺生产部署已经完全验证。
+
+## Agent skills
+
+### Issue tracker
+
+Issue 和 PRD 统一记录在 GitHub Issues。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用默认的五类 triage 标签。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+采用 single-context 领域文档布局。详见 `docs/agents/domain.md`。
