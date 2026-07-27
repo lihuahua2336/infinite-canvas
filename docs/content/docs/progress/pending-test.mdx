@@ -7,6 +7,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 - Vite 版本线回归：主应用应由 Vite + React Router 正常启动，刷新 `/canvas/:id`、`/login`、`/callback` 等路径时 nginx 应回退到 `index.html`，不再依赖 Next.js API route。
 - EggAi SPA 登录：未登录访问业务页应跳转 `/login?redirect=...`；登录后经 `/callback` 返回原页面，刷新后保持登录，退出后回到 `/login`。
+- EggAi 本地门禁：首次登录后应自动读取当前账号的 New API 渠道并把 API Key 保存到本地；Logto 会话过期或清除服务端会话后，刷新页面仍可进入应用并使用已保存渠道生成内容，只有主动点击退出登录才重新要求 EggAi 授权，退出时不删除已保存的渠道密钥。
 - Logto 部署配置：缺少 `LOGTO_ISSUER` 或 `LOGTO_CLIENT_ID` 时应显示中文配置提示；生产与本地的 callback、post logout URI 和 allowed origin 必须分别精确匹配。
 - New API 浏览器直连：设置页应使用当前 Logto resource access token 请求 `/api/ecosystem/me`、`/api/ecosystem/models` 和 `/api/ecosystem/tokens`；跨域未配置时应给出 CORS 提示。
 - New API 渠道导入：首次读取到可用令牌时应自动导入默认渠道，也可手动切换令牌；文本优先选择 `gpt-5.5`，生图优先选择 `gpt-image-2`，缺少对应模型时回退到同类可用模型。

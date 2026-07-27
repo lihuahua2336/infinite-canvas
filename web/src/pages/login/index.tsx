@@ -34,7 +34,7 @@ export default function LoginPage() {
                 </div>
                 <section className="rounded-lg border border-stone-200 bg-background p-6 dark:border-stone-800">
                     <h1 className="text-xl font-semibold text-stone-950 dark:text-stone-100">登录后继续使用</h1>
-                    <p className="mt-2 text-sm leading-6 text-stone-500">使用 EggAi 登录后，可读取 New API 中属于当前账号的模型和令牌。</p>
+                    <p className="mt-2 text-sm leading-6 text-stone-500">首次使用 EggAi 完成授权，当前账号的 New API 渠道密钥将保存在本地。</p>
                     {!isLogtoConfigured ? <Alert className="mt-4" type="warning" showIcon message="请先配置 LOGTO_ISSUER 和 LOGTO_CLIENT_ID" /> : null}
                     {error ? <Alert className="mt-4" type="error" showIcon message={error.message} /> : null}
                     <Button className="mt-5" type="primary" size="large" block icon={<LogIn className="size-4" />} loading={isLoading} disabled={!isLogtoConfigured} onClick={() => void login()}>

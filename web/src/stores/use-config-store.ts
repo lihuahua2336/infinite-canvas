@@ -65,8 +65,17 @@ const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+const NEW_API_CHANNEL_ID_PREFIX = "new-api-";
 const DEFAULT_TEXT_MODEL_NAME = "gpt-5.5";
 const DEFAULT_IMAGE_MODEL_NAME = "gpt-image-2";
+
+export function newAPIChannelId(tokenId: string | number) {
+    return `${NEW_API_CHANNEL_ID_PREFIX}${tokenId}`;
+}
+
+export function isSavedNewAPIChannel(channel: Pick<ModelChannel, "id" | "apiKey">) {
+    return channel.id.startsWith(NEW_API_CHANNEL_ID_PREFIX) && Boolean(channel.apiKey.trim());
+}
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -374,7 +383,7 @@ export function configWithChannels(config: AiConfig, channels: ModelChannel[]): 
 function applyNewAPITokenAsChannel(config: AiConfig, newAPIConfig: NewAPIConfigResponse, tokenId?: string): AiConfig {
     const token = resolveNewAPIToken(newAPIConfig, tokenId);
     if (!token?.apiKey?.trim()) return config;
-    const channelId = `new-api-${token.tokenId}`;
+    const channelId = newAPIChannelId(token.tokenId);
     const baseUrl = token.baseUrl.trim() || config.baseUrl || defaultConfig.baseUrl;
     const channel = createModelChannel({
         id: channelId,

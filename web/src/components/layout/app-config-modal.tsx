@@ -1,4 +1,3 @@
-import { useLogto } from "@logto/react";
 import { Alert, App, Button, Descriptions, Form, Input, Modal, Progress, Select, Tabs, Tag } from "antd";
 import { Cloud, Download, ExternalLink, Info, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -7,13 +6,12 @@ import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ModelPicker } from "@/components/model-picker";
 import { APP_VERSION } from "@/constant/env";
-import { NEW_API_BASE_URL, NEW_API_DISPLAY_NAME, NEW_API_LOGTO_AUDIENCE, NEW_API_PUBLIC_URL } from "@/constant/runtime-config";
+import { useNewAPIConfig } from "@/hooks/use-new-api-config";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { fetchNewAPIConfig, type NewAPIConfigResponse } from "@/services/api/new-api";
 import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { createModelChannel, modelOptionsFromChannels, newAPIChannelId, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -56,77 +54,24 @@ function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProg
 
 export function AppConfigPanel({ showDoneButton = false, initialTab = "channels" }: { showDoneButton?: boolean; initialTab?: ConfigTabKey }) {
     const { message } = App.useApp();
-    const { getAccessToken } = useLogto();
     const configInputRef = useRef<HTMLInputElement>(null);
     const [activeTab, setActiveTab] = useState<ConfigTabKey>(initialTab);
     const [editingChannelId, setEditingChannelId] = useState("");
-    const [aboutOpen, setAboutOpen] = useState(false);
-    const [loadingNewAPIConfig, setLoadingNewAPIConfig] = useState(false);
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
     const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
-    const autoAppliedNewAPI = useRef("");
     const config = useConfigStore((state) => state.config);
     const webdav = useConfigStore((state) => state.webdav);
-    const newAPIConfig = useConfigStore((state) => state.newAPIConfig);
-    const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
-    const setNewAPIConfig = useConfigStore((state) => state.setNewAPIConfig);
-    const applyNewAPITokenAsChannel = useConfigStore((state) => state.applyNewAPITokenAsChannel);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const webdavReady = Boolean(webdav.url.trim());
     const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
-    const serviceDisplayName = newAPIConfig?.displayName || NEW_API_DISPLAY_NAME;
-    const newAPITokenOptions = (newAPIConfig?.tokens || []).map((token) => ({
-        label: token.group ? `${token.tokenName}（${token.group}）` : token.tokenName,
-        value: String(token.tokenId),
-    }));
-    const selectedNewAPIToken = (newAPIConfig?.tokens || []).find((token) => config.channels[0]?.id === `new-api-${token.tokenId}`) || newAPIConfig?.tokens[0];
 
     useEffect(() => setActiveTab(initialTab), [initialTab]);
-
-    useEffect(() => {
-        if (showDoneButton || isConfigOpen) void loadNewAPIConfig(false);
-    }, [isConfigOpen, showDoneButton]);
-
-    async function loadNewAPIConfig(showMessage: boolean) {
-        setLoadingNewAPIConfig(true);
-        try {
-            const hasNewAPIAddress = Boolean(NEW_API_PUBLIC_URL || NEW_API_BASE_URL);
-            if (hasNewAPIAddress && !NEW_API_LOGTO_AUDIENCE) throw new Error("请先配置 NEW_API_LOGTO_AUDIENCE");
-            const accessToken = hasNewAPIAddress ? await getAccessToken(NEW_API_LOGTO_AUDIENCE) : "";
-            const next = await fetchNewAPIConfig(accessToken || "");
-            setNewAPIConfig(next);
-            if (next.configured && next.tokens.length) {
-                const firstChannelId = `new-api-${next.tokens[0].tokenId}`;
-                const latestConfig = useConfigStore.getState().config;
-                const alreadyImported = latestConfig.channels.some((channel) => channel.id.startsWith("new-api-") && channel.apiKey.trim());
-                if (!alreadyImported && autoAppliedNewAPI.current !== firstChannelId) {
-                    autoAppliedNewAPI.current = firstChannelId;
-                    useConfigStore.getState().applyNewAPITokenAsChannel(next);
-                    message.success(`已导入 ${next.displayName} 默认令牌`);
-                }
-            }
-            if (showMessage) message.success(next.message || `${next.displayName} 配置已刷新`);
-        } catch (error) {
-            const fallback = {
-                configured: false,
-                displayName: NEW_API_DISPLAY_NAME,
-                loginUrl: "",
-                message: error instanceof Error ? error.message : `读取 ${NEW_API_DISPLAY_NAME} 配置失败`,
-                models: [],
-                tokens: [],
-            };
-            setNewAPIConfig(fallback);
-            if (showMessage) message.error(fallback.message);
-        } finally {
-            setLoadingNewAPIConfig(false);
-        }
-    }
 
     const saveConfig = (nextConfig: AiConfig) => {
         (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
@@ -245,20 +190,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         label: "渠道",
                         children: (
                             <div>
-                                <NewAPISection
-                                    config={newAPIConfig}
-                                    displayName={serviceDisplayName}
-                                    loading={loadingNewAPIConfig}
-                                    selectedTokenId={selectedNewAPIToken ? String(selectedNewAPIToken.tokenId) : undefined}
-                                    tokenOptions={newAPITokenOptions}
-                                    onRefresh={() => void loadNewAPIConfig(true)}
-                                    onAbout={() => setAboutOpen(true)}
-                                    onApply={(tokenId) => {
-                                        if (!newAPIConfig) return;
-                                        applyNewAPITokenAsChannel(newAPIConfig, tokenId);
-                                        message.success(`已导入 ${serviceDisplayName} 渠道`);
-                                    }}
-                                />
+                                <NewAPISection />
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                     <div className="text-xs text-stone-500">每个渠道选择一个协议并拉取模型，为模型指定生图、视频、文本或音频能力，并可自定义调用脚本。</div>
                                     <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
@@ -357,38 +289,88 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             />
             {showDoneButton ? <div className="mt-4 flex justify-end"><Button type="primary" onClick={finishConfig}>完成</Button></div> : null}
             <ChannelEditorDrawer open={Boolean(editingChannel)} channel={editingChannel} onSave={saveChannel} onClose={() => setEditingChannelId("")} />
-            <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
         </>
     );
 }
 
-function NewAPISection({ config, displayName, loading, selectedTokenId, tokenOptions, onRefresh, onAbout, onApply }: {
-    config: NewAPIConfigResponse | null;
-    displayName: string;
-    loading: boolean;
-    selectedTokenId?: string;
-    tokenOptions: Array<{ label: string; value: string }>;
-    onRefresh: () => void;
-    onAbout: () => void;
-    onApply: (tokenId?: string) => void;
-}) {
+function NewAPISection() {
+    const { message } = App.useApp();
+    const { displayName, hasSavedNewAPIChannel, isAuthenticated, newAPIConfig, provisionNewAPIChannel, refreshNewAPIConfig, saveNewAPITokenAsChannel } = useNewAPIConfig();
+    const config = useConfigStore((state) => state.config);
+    const [aboutOpen, setAboutOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const loadedSession = useRef(false);
+    const tokenOptions = (newAPIConfig?.tokens || []).map((token) => ({
+        label: token.group ? `${token.tokenName}（${token.group}）` : token.tokenName,
+        value: String(token.tokenId),
+    }));
+    const selectedToken = (newAPIConfig?.tokens || []).find((token) => config.channels.some((channel) => channel.id === newAPIChannelId(token.tokenId))) || newAPIConfig?.tokens[0];
+    const selectedTokenId = selectedToken ? String(selectedToken.tokenId) : undefined;
+    const connected = isAuthenticated && newAPIConfig?.configured;
+    const status = connected ? "已连接" : hasSavedNewAPIChannel ? "本地可用" : isAuthenticated ? "待配置" : "未登录";
+
+    useEffect(() => {
+        if (!isAuthenticated) {
+            loadedSession.current = false;
+            return;
+        }
+        if (loadedSession.current) return;
+        loadedSession.current = true;
+        setLoading(true);
+        const loadConfig = hasSavedNewAPIChannel
+            ? refreshNewAPIConfig()
+            : provisionNewAPIChannel().then((next) => {
+                  message.success(`已导入 ${next.displayName} 默认令牌`);
+                  return next;
+              });
+        void loadConfig
+            .catch(() => undefined)
+            .finally(() => setLoading(false));
+    }, [hasSavedNewAPIChannel, isAuthenticated, message, provisionNewAPIChannel, refreshNewAPIConfig]);
+
+    const refresh = async () => {
+        setLoading(true);
+        try {
+            const next = await refreshNewAPIConfig();
+            message.success(next.message || `${next.displayName} 配置已刷新`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : `读取 ${displayName} 配置失败`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const applyToken = (tokenId?: string) => {
+        if (!newAPIConfig) return;
+        try {
+            saveNewAPITokenAsChannel(newAPIConfig, tokenId);
+            message.success(`已导入 ${displayName} 渠道`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : `${displayName} 渠道导入失败`);
+        }
+    };
+
     return (
-        <section className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-center gap-2 text-sm font-semibold">{displayName}<Tag color={config?.configured ? "green" : "default"}>{config?.configured ? "已连接" : "待配置"}</Tag></div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button size="small" icon={<RefreshCw className="size-3.5" />} loading={loading} onClick={onRefresh}>刷新</Button>
-                    {config?.loginUrl ? <Button size="small" icon={<ExternalLink className="size-3.5" />} href={config.loginUrl} target="_blank" rel="noopener noreferrer">前往配置</Button> : null}
-                    <Button size="small" icon={<Info className="size-3.5" />} onClick={onAbout}>关于</Button>
+        <>
+            <section className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold">{displayName}<Tag color={connected || hasSavedNewAPIChannel ? "green" : "default"}>{status}</Tag></div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                        <Button size="small" icon={<RefreshCw className="size-3.5" />} loading={loading} disabled={!isAuthenticated} title={isAuthenticated ? "刷新渠道" : "重新登录 EggAi 后可刷新"} onClick={() => void refresh()}>刷新</Button>
+                        {newAPIConfig?.loginUrl ? <Button size="small" icon={<ExternalLink className="size-3.5" />} href={newAPIConfig.loginUrl} target="_blank" rel="noopener noreferrer">前往配置</Button> : null}
+                        <Button size="small" icon={<Info className="size-3.5" />} onClick={() => setAboutOpen(true)}>关于</Button>
+                    </div>
                 </div>
-            </div>
-            {config?.message ? <Alert className="mb-3" type={config.configured ? "success" : "info"} showIcon message={config.message} /> : null}
-            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                <Select placeholder={`请选择 ${displayName} 令牌`} value={selectedTokenId} options={tokenOptions} loading={loading} disabled={!tokenOptions.length} onChange={onApply} />
-                <Button type="primary" disabled={!tokenOptions.length} onClick={() => onApply(selectedTokenId)}>导入 / 切换</Button>
-            </div>
-            <div className="mt-2 text-xs text-stone-500">已读取 {config?.models.length || 0} 个模型、{config?.tokens.length || 0} 个令牌。</div>
-        </section>
+                {isAuthenticated && newAPIConfig?.message ? <Alert className="mb-3" type={newAPIConfig.configured ? "success" : "info"} showIcon message={newAPIConfig.message} /> : null}
+                {!isAuthenticated && hasSavedNewAPIChannel ? <Alert className="mb-3" type="success" showIcon message={`${displayName} 渠道密钥已保存在本地`} /> : null}
+                <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                    <Select placeholder={`请选择 ${displayName} 令牌`} value={selectedTokenId} options={tokenOptions} loading={loading} disabled={!tokenOptions.length} onChange={applyToken} />
+                    <Button type="primary" disabled={!tokenOptions.length} onClick={() => applyToken(selectedTokenId)}>导入 / 切换</Button>
+                </div>
+                <div className="mt-2 text-xs text-stone-500">{isAuthenticated ? `已读取 ${newAPIConfig?.models.length || 0} 个模型、${newAPIConfig?.tokens.length || 0} 个令牌。` : hasSavedNewAPIChannel ? "当前使用本地保存的渠道配置。" : "登录 EggAi 后可导入账号渠道。"}</div>
+            </section>
+            <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+        </>
     );
 }
 

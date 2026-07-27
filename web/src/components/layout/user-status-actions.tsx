@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { useLogto } from "@logto/react";
+import { App } from "antd";
 import { BookOpen, Keyboard, LogOut, Puzzle, Settings2, UserCircle } from "lucide-react";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -17,19 +18,35 @@ type UserStatusActionsProps = {
 };
 
 export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
-    const { signOut } = useLogto();
+    const { message } = App.useApp();
+    const { isAuthenticated, signOut } = useLogto();
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const setNewAPIConfig = useConfigStore((state) => state.setNewAPIConfig);
     const user = useUserStore((state) => state.user);
-    const clearUser = useUserStore((state) => state.clearUser);
+    const hasPassedEggAiGate = useUserStore((state) => state.hasPassedEggAiGate);
+    const revokeEggAiGate = useUserStore((state) => state.revokeEggAiGate);
+    const completeEggAiLogout = useUserStore((state) => state.completeEggAiLogout);
     const canvasTheme = canvasThemes[theme];
     const naturalIconClass = "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white [&_svg]:size-4";
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
+    const logoutLabel = user ? "退出登录" : "退出本机访问";
 
     const logout = async () => {
-        clearUser();
-        await signOut(new URL("/login", window.location.origin).toString());
+        revokeEggAiGate();
+        setNewAPIConfig(null);
+        if (isAuthenticated) {
+            try {
+                await signOut(new URL("/login", window.location.origin).toString());
+            } catch (error) {
+                completeEggAiLogout();
+                message.error(error instanceof Error ? error.message : "退出 EggAi 登录失败");
+            }
+            return;
+        }
+        completeEggAiLogout();
+        window.location.assign("/login");
     };
 
     return (
@@ -58,8 +75,8 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Keyboard className="size-4" />
                 </button>
             ) : null}
-            {user ? (
-                <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => void logout()} aria-label="退出登录" title="退出登录">
+            {user || hasPassedEggAiGate ? (
+                <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => void logout()} aria-label={logoutLabel} title={logoutLabel}>
                     <LogOut className="size-4" />
                 </button>
             ) : null}
