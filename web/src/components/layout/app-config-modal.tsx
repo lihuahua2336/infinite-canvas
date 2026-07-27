@@ -1,6 +1,6 @@
 import { useLogto } from "@logto/react";
 import { Alert, App, Button, Descriptions, Form, Input, Modal, Progress, Select, Tabs, Tag } from "antd";
-import { Cloud, ExternalLink, Info, Pencil, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
+import { Cloud, Download, ExternalLink, Info, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
@@ -10,6 +10,7 @@ import { APP_VERSION } from "@/constant/env";
 import { NEW_API_BASE_URL, NEW_API_DISPLAY_NAME, NEW_API_LOGTO_AUDIENCE, NEW_API_PUBLIC_URL } from "@/constant/runtime-config";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { fetchNewAPIConfig, type NewAPIConfigResponse } from "@/services/api/new-api";
+import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
@@ -56,6 +57,7 @@ function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProg
 export function AppConfigPanel({ showDoneButton = false, initialTab = "channels" }: { showDoneButton?: boolean; initialTab?: ConfigTabKey }) {
     const { message } = App.useApp();
     const { getAccessToken } = useLogto();
+    const configInputRef = useRef<HTMLInputElement>(null);
     const [activeTab, setActiveTab] = useState<ConfigTabKey>(initialTab);
     const [editingChannelId, setEditingChannelId] = useState("");
     const [aboutOpen, setAboutOpen] = useState(false);
@@ -138,6 +140,17 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         clearPromptContinue();
     };
 
+    const loadConfigFile = async (file: File) => {
+        try {
+            await importAppConfig(file);
+            message.success("配置与用户偏好已导入");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "配置文件读取失败");
+        } finally {
+            if (configInputRef.current) configInputRef.current.value = "";
+        }
+    };
+
     const updateChannels = (channels: ModelChannel[]) => saveConfig(withChannels(config, channels));
 
     const addChannel = () => {
@@ -211,6 +224,18 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     return (
         <>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3 dark:border-stone-800">
+                <div className="text-xs text-stone-500">JSON 文件包含 API Key 和 WebDAV 凭据，请妥善保管。</div>
+                <div className="flex gap-2">
+                    <Button icon={<Upload className="size-4" />} onClick={() => configInputRef.current?.click()}>
+                        导入配置
+                    </Button>
+                    <Button icon={<Download className="size-4" />} onClick={exportAppConfig}>
+                        导出配置
+                    </Button>
+                    <input ref={configInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => event.target.files?.[0] && void loadConfigFile(event.target.files[0])} />
+                </div>
+            </div>
             <Tabs
                 activeKey={activeTab}
                 onChange={(key) => setActiveTab(key as ConfigTabKey)}
@@ -421,7 +446,9 @@ function normalizeImageCount(value: string) {
 }
 
 function apiFormatLabel(apiFormat: ApiCallFormat) {
-    return apiFormat === "gemini" ? "Gemini" : "OpenAI";
+    if (apiFormat === "gemini") return "Gemini";
+    if (apiFormat === "ark") return "火山方舟";
+    return "OpenAI";
 }
 
 function formatWebdavTime(value: string) {
