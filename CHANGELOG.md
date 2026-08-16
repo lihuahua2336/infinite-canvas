@@ -4,7 +4,7 @@
 
 + [新增] 以 tigerowo 上游 Next.js 基线移植 EggAI Logto 登录，并在登录后自动配置 New API 渠道
 + [新增] 补充 EggAI/Logto 与 New API 的部署配置文档
-+ [调整] 用户侧改为强制 EggAI 登录，移除 GitHub 与 Linux.do 登录入口，并按刷新周期同步首个 EggAI 渠道
++ [调整] 用户侧改为按聊天、生图操作触发 EggAI 登录，退出后可匿名浏览，并按刷新周期同步首个 EggAI 渠道
 + [调整] EggAI 登录迁移到 Logto 官方 Next.js App Router 服务端流程，并通过服务端代理同步 New API 渠道
 + [修复] 修复 Logto 服务端回调错误传递 NextURL 导致 state 无法校验的问题
 

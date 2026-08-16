@@ -11,7 +11,7 @@ description: 使用 Logto 为无限画布接入 EggAI 登录，并自动配置 N
 
 Next.js 服务端通过 Logto 官方 `@logto/next` SDK 完成 OIDC 登录，并把登录状态和 token 保存在加密的 HttpOnly Cookie 中。登录成功后，本项目服务端使用 resource access token 请求 New API 的生态接口，浏览器只接收模型和令牌配置并保存首个渠道。
 
-EggAI/Logto 是用户侧的强制登录方式。未配置 Logto 时，业务页面会跳转到登录页并显示配置错误；用户侧不再提供账号密码或 Linux.do 登录入口。
+主页、画布和创作页面允许匿名浏览。用户实际发起画布聊天或图片生成时，如果尚未登录，页面才会跳转到 EggAI 授权；用户侧不再提供账号密码或 Linux.do 登录入口。
 
 ## Logto 配置
 
@@ -75,8 +75,8 @@ New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用�
 2. 在 New API 中配置对应的 Logto 资源、scope 和用户令牌。
 3. 将上述变量写入部署环境的 `.env`。
 4. 首次执行 `docker compose up -d --build`；以后只修改认证变量时重启容器即可。
-5. 打开任意业务页面；未登录时会自动跳转至 EggAI 授权，也可以从 `/login` 手动开始登录。
-6. 登录完成后返回画布，检查配置弹窗中的本地渠道和模型列表。
+5. 匿名打开主页、画布或创作页面，发起聊天或图片生成时进入 EggAI 授权；也可以从 `/login` 手动开始登录。
+6. 登录完成后返回触发登录前的页面，检查配置弹窗中的本地渠道和模型列表。
 
 ## 安全说明
 

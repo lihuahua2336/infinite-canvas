@@ -16,28 +16,13 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
     const eggAiUser = useEggAiStore((state) => state.user);
-    const eggAiReady = useEggAiStore((state) => state.hasPassedGate);
-    const eggAiProvisioning = useEggAiStore((state) => state.isProvisioning);
-    const eggAiError = useEggAiStore((state) => state.error);
     const wasLoggedOutRef = useRef(false);
     const isProtectedPage = protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-    const isAuthFlowPage = pathname === "/login" || pathname === "/callback";
-    const requiresEggAi = !isAuthFlowPage;
 
     useEffect(() => {
         if (!isReady || !isProtectedPage || user || eggAiUser) return;
         router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
     }, [eggAiUser, isProtectedPage, isReady, pathname, router, user]);
-
-    useEffect(() => {
-        if (!requiresEggAi || eggAiReady || eggAiProvisioning || !isReady) return;
-        const redirect = `${pathname}${window.location.search}${window.location.hash}`;
-        if (eggAiError) {
-            router.replace(`/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(eggAiError)}`);
-            return;
-        }
-        window.location.assign(`/api/auth/sign-in?redirect=${encodeURIComponent(redirect)}`);
-    }, [eggAiError, eggAiProvisioning, eggAiReady, isReady, pathname, requiresEggAi, router]);
 
     useEffect(() => {
         if (!isReady) return;
@@ -69,7 +54,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     return (
         <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
             <AppTopNav />
-            <div className="min-h-0 flex-1 overflow-hidden">{(isProtectedPage && (!isReady || (!user && !eggAiUser))) || (requiresEggAi && (!eggAiReady || eggAiProvisioning)) ? null : children}</div>
+            <div className="min-h-0 flex-1 overflow-hidden">{isProtectedPage && (!isReady || (!user && !eggAiUser)) ? null : children}</div>
         </div>
     );
 }
