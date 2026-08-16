@@ -6,8 +6,11 @@ import { ProConfigProvider } from "@ant-design/pro-components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
+import { LogtoProvider } from "@logto/react";
 
 import { ClientRootInit } from "@/components/layout/client-root-init";
+import { EggAiSession } from "@/components/layout/eggai-session";
+import { eggAiConfig, isEggAiConfigured } from "@/lib/eggai";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -24,6 +27,7 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
     const theme = useThemeStore((state) => state.theme);
     const dark = theme === "dark";
+    const app = <EggAiSession><ClientRootInit>{children}</ClientRootInit></EggAiSession>;
 
     useEffect(() => {
         document.documentElement.classList.toggle("dark", dark);
@@ -35,7 +39,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
             <ProConfigProvider dark={dark}>
                 <App>
                     <QueryClientProvider client={queryClient}>
-                        <ClientRootInit>{children}</ClientRootInit>
+                        {isEggAiConfigured ? <LogtoProvider config={eggAiConfig}>{app}</LogtoProvider> : <ClientRootInit>{children}</ClientRootInit>}
                     </QueryClientProvider>
                 </App>
             </ProConfigProvider>

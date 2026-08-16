@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [新增] 以 tigerowo 上游 Next.js 基线移植 EggAI Logto 登录，并在登录后自动配置 New API 渠道
+
 ## v0.5.4 - 2026-08-16
 
 + [新增] 新增智谱官方 GLM 文本/图片/视频/音频生成与独立参数面板支持

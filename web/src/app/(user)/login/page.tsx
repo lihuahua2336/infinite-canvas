@@ -2,12 +2,16 @@
 
 import { LockOutlined, UserOutlined } from "@ant-design/icons";
 import { App, Button, Form, Input, Segmented, Space } from "antd";
+import { LogIn } from "lucide-react";
+import { useLogto } from "@logto/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import { fetchCurrentUser } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useEggAiStore } from "@/stores/use-eggai-store";
+import { eggAiCallbackUrl, isEggAiConfigured } from "@/lib/eggai";
 
 type LoginFormValues = {
     username: string;
@@ -37,14 +41,22 @@ function LoginContent() {
     const { message } = App.useApp();
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { signIn } = useLogto();
     const login = useUserStore((state) => state.login);
     const register = useUserStore((state) => state.register);
     const setSession = useUserStore((state) => state.setSession);
     const isLoading = useUserStore((state) => state.isLoading);
     const linuxDoEnabled = useConfigStore((state) => state.publicSettings?.auth?.linuxDo?.enabled === true);
     const allowRegister = useConfigStore((state) => state.publicSettings?.auth?.allowRegister !== false);
+    const eggAiError = useEggAiStore((state) => state.error);
+    const eggAiProvisioning = useEggAiStore((state) => state.isProvisioning);
     const [mode, setMode] = useState<"login" | "register">("login");
     const redirect = safeRedirect(searchParams.get("redirect"));
+
+    const loginWithEggAi = () => {
+        sessionStorage.setItem("infinite-canvas:eggai-redirect", redirect);
+        void signIn(eggAiCallbackUrl());
+    };
 
     useEffect(() => {
         const token = searchParams.get("token");
@@ -97,8 +109,16 @@ function LoginContent() {
                         aria-label="无限画布"
                     />
                     <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">账号登录</h1>
-                    <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">支持账号密码和 Linux.do 登录。</p>
+                    <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">支持 EggAI、账号密码和 Linux.do 登录。</p>
                 </div>
+
+                {isEggAiConfigured ? (
+                    <Button block size="large" icon={<LogIn className="size-4" />} loading={eggAiProvisioning} onClick={loginWithEggAi}>
+                        使用 EggAI 登录
+                    </Button>
+                ) : null}
+                {eggAiError ? <p className="mt-3 text-center text-sm text-red-500">{eggAiError}</p> : null}
+                {isEggAiConfigured ? <div className="my-5 flex items-center gap-3 text-xs text-stone-400"><span className="h-px flex-1 bg-stone-200 dark:bg-stone-700" /><span>或使用本地账号</span><span className="h-px flex-1 bg-stone-200 dark:bg-stone-700" /></div> : null}
 
                 <Form<LoginFormValues> layout="vertical" size="large" requiredMark={false} onFinish={submit}>
                     <Form.Item>

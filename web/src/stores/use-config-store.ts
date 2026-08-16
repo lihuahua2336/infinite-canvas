@@ -6,6 +6,7 @@ import { persist } from "zustand/middleware";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
+import type { NewAPIConfigResponse } from "@/services/api/new-api";
 import { useUserStore } from "@/stores/use-user-store";
 
 export type LocalModelChannel = {
@@ -87,6 +88,7 @@ export type AiConfig = {
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
+const NEW_API_CHANNEL_ID_PREFIX = "new-api-";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
 export const defaultConfig: AiConfig = {
@@ -156,6 +158,7 @@ export const defaultConfig: AiConfig = {
 
 type ConfigStore = {
     config: AiConfig;
+    newAPIConfig: NewAPIConfigResponse | null;
     publicSettings: AdminPublicSettings | null;
     isPublicSettingsLoading: boolean;
     isConfigOpen: boolean;
@@ -166,6 +169,8 @@ type ConfigStore = {
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
     clearPromptContinue: () => void;
+    setNewAPIConfig: (config: NewAPIConfigResponse | null) => void;
+    applyNewAPITokenAsChannel: (config: NewAPIConfigResponse, tokenId?: string) => void;
 };
 
 function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null, canUseRemoteChannel: boolean) {
@@ -329,6 +334,7 @@ export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
             config: defaultConfig,
+            newAPIConfig: null,
             publicSettings: null,
             isPublicSettingsLoading: false,
             isConfigOpen: false,
@@ -353,6 +359,8 @@ export const useConfigStore = create<ConfigStore>()(
             openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
+            setNewAPIConfig: (newAPIConfig) => set({ newAPIConfig }),
+            applyNewAPITokenAsChannel: (newAPIConfig, tokenId) => set((state) => ({ config: applyNewAPITokenAsChannel(state.config, newAPIConfig, tokenId), newAPIConfig })),
         }),
         {
             name: CONFIG_STORE_KEY,
@@ -454,6 +462,47 @@ function normalizeVersionedBaseUrl(baseUrl: string) {
     } catch {
         return baseUrl;
     }
+}
+
+export function newAPIChannelId(tokenId: string | number) {
+    return `${NEW_API_CHANNEL_ID_PREFIX}${tokenId}`;
+}
+
+export function applyNewAPITokenAsChannel(config: AiConfig, next: NewAPIConfigResponse, tokenId?: string): AiConfig {
+    const token = next.tokens.find((item) => String(item.tokenId) === tokenId) || next.tokens[0];
+    if (!token) return config;
+    const channel = {
+        id: newAPIChannelId(token.tokenId),
+        protocol: "openai" as const,
+        name: `${next.displayName} · ${token.tokenName}`,
+        baseUrl: token.baseUrl,
+        apiKey: token.apiKey,
+        models: next.models,
+    };
+    const channels = [...normalizeLocalChannels(config).filter((item) => !item.id.startsWith(NEW_API_CHANNEL_ID_PREFIX)), channel];
+    const models = normalizeModelList(channels.flatMap((item) => item.models));
+    return {
+        ...config,
+        channelMode: "local",
+        localChannels: channels,
+        baseUrl: channel.baseUrl,
+        apiKey: channel.apiKey,
+        models,
+        imageModels: filterModelsByCapability(models, "image"),
+        videoModels: filterModelsByCapability(models, "video"),
+        textModels: filterModelsByCapability(models, "text"),
+        audioModels: filterModelsByCapability(models, "audio"),
+        activeChannelId: channel.id,
+        imageChannelId: channel.id,
+        videoChannelId: channel.id,
+        textChannelId: channel.id,
+        audioChannelId: channel.id,
+        model: next.models[0] || config.model,
+        imageModel: filterModelsByCapability(next.models, "image")[0] || config.imageModel,
+        videoModel: filterModelsByCapability(next.models, "video")[0] || config.videoModel,
+        textModel: filterModelsByCapability(next.models, "text")[0] || config.textModel,
+        audioModel: filterModelsByCapability(next.models, "audio")[0] || config.audioModel,
+    };
 }
 
 export function normalizeLocalChannels(config: Partial<AiConfig>): LocalModelChannel[] {
