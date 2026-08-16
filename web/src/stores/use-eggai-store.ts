@@ -22,7 +22,7 @@ export const useEggAiStore = create<EggAiStore>()(
         (set) => ({
             user: null,
             hasPassedGate: false,
-            isProvisioning: false,
+            isProvisioning: true,
             error: "",
             setUser: (user) => set({ user, error: "" }),
             grantGate: () => set({ hasPassedGate: true, isProvisioning: false }),

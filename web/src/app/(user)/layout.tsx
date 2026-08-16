@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { useLogto } from "@logto/react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { AppTopNav } from "@/components/layout/app-top-nav";
 import { fetchUserConfig } from "@/services/api/user-config";
 import { useUserStore } from "@/stores/use-user-store";
 import { useEggAiStore } from "@/stores/use-eggai-store";
-import { eggAiCallbackUrl, isEggAiConfigured } from "@/lib/eggai";
 
 const protectedPrefixes = ["/asset-library"];
 
@@ -21,8 +19,6 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const eggAiReady = useEggAiStore((state) => state.hasPassedGate);
     const eggAiProvisioning = useEggAiStore((state) => state.isProvisioning);
     const eggAiError = useEggAiStore((state) => state.error);
-    const { isAuthenticated: isEggAiAuthenticated, isLoading: isEggAiLoading, signIn } = useLogto();
-    const eggAiSignInStartedRef = useRef(false);
     const wasLoggedOutRef = useRef(false);
     const isProtectedPage = protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
     const isAuthFlowPage = pathname === "/login" || pathname === "/callback";
@@ -34,22 +30,14 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     }, [eggAiUser, isProtectedPage, isReady, pathname, router, user]);
 
     useEffect(() => {
-        const waitingForEggAi = isEggAiLoading || (isEggAiAuthenticated && !eggAiError);
-        if (!requiresEggAi || eggAiReady || eggAiProvisioning || waitingForEggAi || !isReady) return;
+        if (!requiresEggAi || eggAiReady || eggAiProvisioning || !isReady) return;
         const redirect = `${pathname}${window.location.search}${window.location.hash}`;
-        sessionStorage.setItem("infinite-canvas:eggai-redirect", redirect);
-        if (!isEggAiConfigured) {
-            router.replace(`/login?redirect=${encodeURIComponent(redirect)}`);
-            return;
-        }
         if (eggAiError) {
-            router.replace(`/login?redirect=${encodeURIComponent(redirect)}`);
+            router.replace(`/login?redirect=${encodeURIComponent(redirect)}&error=${encodeURIComponent(eggAiError)}`);
             return;
         }
-        if (eggAiSignInStartedRef.current) return;
-        eggAiSignInStartedRef.current = true;
-        void signIn(eggAiCallbackUrl());
-    }, [eggAiError, eggAiProvisioning, eggAiReady, eggAiUser, isEggAiAuthenticated, isEggAiLoading, isReady, pathname, requiresEggAi, router, signIn]);
+        window.location.assign(`/api/auth/sign-in?redirect=${encodeURIComponent(redirect)}`);
+    }, [eggAiError, eggAiProvisioning, eggAiReady, isReady, pathname, requiresEggAi, router]);
 
     useEffect(() => {
         if (!isReady) return;
@@ -81,7 +69,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     return (
         <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
             <AppTopNav />
-            <div className="min-h-0 flex-1 overflow-hidden">{(isProtectedPage && (!isReady || (!user && !eggAiUser))) || (requiresEggAi && (!eggAiReady || eggAiProvisioning || isEggAiLoading || (isEggAiAuthenticated && !eggAiError))) ? null : children}</div>
+            <div className="min-h-0 flex-1 overflow-hidden">{(isProtectedPage && (!isReady || (!user && !eggAiUser))) || (requiresEggAi && (!eggAiReady || eggAiProvisioning)) ? null : children}</div>
         </div>
     );
 }

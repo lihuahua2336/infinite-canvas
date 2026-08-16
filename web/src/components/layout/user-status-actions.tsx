@@ -2,7 +2,6 @@
 
 import type { CSSProperties, RefObject } from "react";
 import { Avatar, Dropdown, Tooltip } from "antd";
-import { useLogto } from "@logto/react";
 import { Keyboard, LogOut, Settings2, Shield } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
 import Link from "next/link";
@@ -33,7 +32,6 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const logoutLocal = useUserStore((state) => state.clearSession);
     const eggAiUser = useEggAiStore((state) => state.user);
     const clearEggAi = useEggAiStore((state) => state.clear);
-    const { isAuthenticated, signOut } = useLogto();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const canvasTheme = canvasThemes[theme];
     const account = eggAiUser || user;
@@ -56,7 +54,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const logout = async () => {
         if (eggAiUser) {
             clearEggAi();
-            if (isAuthenticated) await signOut(new URL("/login", window.location.origin).toString());
+            window.location.assign("/api/auth/sign-out");
             return;
         }
         logoutLocal();

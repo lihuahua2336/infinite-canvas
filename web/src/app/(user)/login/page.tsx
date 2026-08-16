@@ -1,35 +1,18 @@
-"use client";
-
 import { Alert, Button } from "antd";
 import { LogIn } from "lucide-react";
-import { useLogto } from "@logto/react";
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { redirect } from "next/navigation";
 
-import { useEggAiStore } from "@/stores/use-eggai-store";
-import { eggAiCallbackUrl, isEggAiConfigured } from "@/lib/eggai";
+import { safeRedirectPath } from "@/lib/eggai";
 
-function safeRedirect(value: string | null): string {
-    const cleaned = (value ?? "").replace(/[\t\n\r]/g, "");
-    if (!cleaned.startsWith("/") || cleaned.startsWith("//") || cleaned.startsWith("/\\")) return "/";
-    return cleaned;
-}
+type LoginPageProps = {
+    searchParams: Promise<{ redirect?: string; error?: string; loggedOut?: string }>;
+};
 
-export default function LoginPage() {
-    return <Suspense fallback={null}><LoginContent /></Suspense>;
-}
-
-function LoginContent() {
-    const searchParams = useSearchParams();
-    const { signIn } = useLogto();
-    const eggAiError = useEggAiStore((state) => state.error);
-    const eggAiProvisioning = useEggAiStore((state) => state.isProvisioning);
-    const redirect = safeRedirect(searchParams.get("redirect"));
-
-    const loginWithEggAi = () => {
-        sessionStorage.setItem("infinite-canvas:eggai-redirect", redirect);
-        void signIn(eggAiCallbackUrl());
-    };
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+    const params = await searchParams;
+    const target = safeRedirectPath(params.redirect);
+    const signInUrl = `/api/auth/sign-in?redirect=${encodeURIComponent(target)}`;
+    if (!params.error && params.loggedOut !== "1") redirect(signInUrl);
 
     return (
         <main className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-10 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]">
@@ -39,14 +22,8 @@ function LoginContent() {
                     <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">EggAI 登录</h1>
                     <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">完成 EggAI 授权后开始创作。</p>
                 </div>
-                {isEggAiConfigured ? (
-                    <Button block size="large" icon={<LogIn className="size-4" />} loading={eggAiProvisioning} onClick={loginWithEggAi}>
-                        使用 EggAI 登录
-                    </Button>
-                ) : (
-                    <Alert type="error" showIcon message="EggAI 登录尚未配置" description="请设置 NEXT_PUBLIC_LOGTO_ISSUER 和 NEXT_PUBLIC_LOGTO_CLIENT_ID 后重新构建。" />
-                )}
-                {eggAiError ? <p className="mt-3 text-center text-sm text-red-500">{eggAiError}</p> : null}
+                {params.error ? <Alert className="mb-3" type="error" showIcon message={params.error} /> : null}
+                <Button block href={signInUrl} size="large" icon={<LogIn className="size-4" />}>使用 EggAI 登录</Button>
             </section>
         </main>
     );

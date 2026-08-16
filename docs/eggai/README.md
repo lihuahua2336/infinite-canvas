@@ -9,22 +9,24 @@ description: 使用 Logto 为无限画布接入 EggAI 登录，并自动配置 N
 
 ## 工作方式
 
-浏览器中的 Logto SDK 负责完成 OIDC 登录。登录成功后，前端读取 ID Token 中的用户资料，并使用 access token 请求 New API 的生态接口，获取模型和令牌，然后把选中的令牌保存到浏览器本地渠道配置中。
+Next.js 服务端通过 Logto 官方 `@logto/next` SDK 完成 OIDC 登录，并把登录状态和 token 保存在加密的 HttpOnly Cookie 中。登录成功后，本项目服务端使用 resource access token 请求 New API 的生态接口，浏览器只接收模型和令牌配置并保存首个渠道。
 
 EggAI/Logto 是用户侧的强制登录方式。未配置 Logto 时，业务页面会跳转到登录页并显示配置错误；用户侧不再提供账号密码或 Linux.do 登录入口。
 
 ## Logto 配置
 
-在 Logto 控制台创建一个 Web 应用，并将以下回调地址加入允许列表：
+在 Logto 控制台创建 Traditional Web Application，并将以下地址加入允许列表：
 
 ```text
 https://你的站点域名/callback
+https://你的站点域名/
 ```
 
 本地开发时使用：
 
 ```text
 http://localhost:3000/callback
+http://localhost:3000/
 ```
 
 使用 Docker Compose 部署时，在项目根目录 `.env` 中设置：
@@ -36,12 +38,13 @@ LOGTO_CLIENT_ID=你的应用 ID
 LOGTO_CLIENT_SECRET=你的应用密钥
 LOGTO_SCOPE=openid profile email
 SESSION_SECRET=随机生成的长字符串
-COOKIE_SECURE=true
+APP_PUBLIC_URL=http://localhost:3000
+COOKIE_SECURE=false
 ```
 
-Compose 会在构建时把 Issuer、Client ID 和 Scope 映射到对应的 `NEXT_PUBLIC_*` 变量。`LOGTO_ISSUER` 可以填写带 `/oidc` 的 Issuer 地址，前端会自动去掉末尾路径后初始化 Logto SDK。`LOGTO_CLIENT_SECRET` 和 `SESSION_SECRET` 只在容器运行时注入，不会作为前端构建参数。
+`LOGTO_ISSUER` 可以填写带 `/oidc` 的 Issuer，服务端会转换为 Logto endpoint。`LOGTO_INTERNAL_ISSUER` 仅用于容器需要通过内部地址访问 Logto 的场景。`SESSION_SECRET` 至少 32 个字符；本地 HTTP 必须使用 `COOKIE_SECURE=false`，生产 HTTPS 使用 `true`。
 
-不使用 Docker、直接启动前端开发服务时，需要改用 `NEXT_PUBLIC_LOGTO_ISSUER`、`NEXT_PUBLIC_LOGTO_CLIENT_ID` 和 `NEXT_PUBLIC_LOGTO_SCOPE`。
+所有变量都由 Next.js 服务端在运行时读取，不使用 `NEXT_PUBLIC_*`，Client Secret 和 access token 不会进入浏览器构建产物。
 
 ## New API 自动渠道
 
@@ -55,9 +58,9 @@ NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read eco
 NEW_API_DISPLAY_NAME=EggAI
 ```
 
-Compose 同样会把这些公开项映射到前端构建变量。直接启动前端开发服务时，在变量名前加 `NEXT_PUBLIC_`。
+`NEW_API_BASE_URL` 是 Next.js 服务端请求地址，`NEW_API_PUBLIC_URL` 是保存到本地渠道的浏览器可访问地址。Audience 和 scope 必须与 Logto API Resource、New API 服务端配置完全一致。
 
-New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用户在 New API 中已有可用模型和生态令牌。前端登录后会读取：
+New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用户已有可用模型和生态令牌。Next.js 服务端会读取：
 
 - `/api/ecosystem/models`
 - `/api/ecosystem/tokens`
@@ -71,15 +74,15 @@ New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用�
 1. 在 Logto 中创建应用并配置 `/callback` 回调地址。
 2. 在 New API 中配置对应的 Logto 资源、scope 和用户令牌。
 3. 将上述变量写入部署环境的 `.env`。
-4. 执行 `docker compose up -d --build`，使公开配置进入浏览器构建产物。
+4. 首次执行 `docker compose up -d --build`；以后只修改认证变量时重启容器即可。
 5. 打开任意业务页面；未登录时会自动跳转至 EggAI 授权，也可以从 `/login` 手动开始登录。
 6. 登录完成后返回画布，检查配置弹窗中的本地渠道和模型列表。
 
 ## 安全说明
 
-Compose 映射到 `NEXT_PUBLIC_*` 的变量会暴露给浏览器，因此不能把 `LOGTO_CLIENT_SECRET`、`SESSION_SECRET`、管理员密钥或 New API 服务端密钥加入构建参数。New API 生态令牌也会被保存到当前浏览器的本地配置中；请为用户创建权限受限、可撤销的令牌，并避免在公共设备上保持登录状态。
+`LOGTO_CLIENT_SECRET`、`SESSION_SECRET` 和 EggAI access token 只在 Next.js 服务端使用。New API 返回的生态令牌仍会保存到当前浏览器的本地渠道配置中；请使用权限受限、可撤销的令牌，并避免在公共设备上保持登录状态。
 
-当前实现由浏览器直接请求 Logto 和 New API，服务端不会代替浏览器保存 EggAI access token。生产环境需要确保 New API 的 CORS、HTTPS 和 Logto 资源配置允许该站点访问。
+浏览器不再直接请求 New API，因此 models/tokens 获取不依赖 New API 对画布域名开放 CORS。生产环境仍需保证 Next.js 容器可以通过 HTTPS 访问 Logto 和 New API。
 
 ## 常见问题
 
@@ -97,4 +100,4 @@ Compose 映射到 `NEXT_PUBLIC_*` 的变量会暴露给浏览器，因此不能�
 
 ### 修改环境变量后没有生效
 
-`NEXT_PUBLIC_*` 变量在 Next.js 构建阶段注入。修改后需要重新构建前端并清理旧容器，而不是只重启 Go 后端。
+认证变量由 Next.js 服务端运行时读取，修改后需要重新创建或重启整个应用容器。
