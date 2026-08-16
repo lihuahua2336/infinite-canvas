@@ -27,7 +27,7 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
     const theme = useThemeStore((state) => state.theme);
     const dark = theme === "dark";
-    const app = <EggAiSession><ClientRootInit>{children}</ClientRootInit></EggAiSession>;
+    const app = isEggAiConfigured ? <EggAiSession><ClientRootInit>{children}</ClientRootInit></EggAiSession> : <ClientRootInit>{children}</ClientRootInit>;
 
     useEffect(() => {
         document.documentElement.classList.toggle("dark", dark);
@@ -39,7 +39,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
             <ProConfigProvider dark={dark}>
                 <App>
                     <QueryClientProvider client={queryClient}>
-                        {isEggAiConfigured ? <LogtoProvider config={eggAiConfig}>{app}</LogtoProvider> : <ClientRootInit>{children}</ClientRootInit>}
+                        <LogtoProvider config={eggAiConfig}>{app}</LogtoProvider>
                     </QueryClientProvider>
                 </App>
             </ProConfigProvider>
