@@ -32,7 +32,7 @@ export const useEggAiStore = create<EggAiStore>()(
         }),
         {
             name: "infinite-canvas:eggai-access-v1",
-            partialize: (state) => ({ user: state.user, hasPassedGate: state.hasPassedGate }),
+            partialize: (state) => ({ user: state.user }),
         },
     ),
 );

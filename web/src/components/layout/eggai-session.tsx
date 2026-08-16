@@ -9,6 +9,8 @@ import { fetchNewAPIConfig } from "@/services/api/new-api";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useEggAiStore } from "@/stores/use-eggai-store";
 
+let provisionedInCurrentRuntime = false;
+
 export function EggAiSession({ children }: { children: ReactNode }) {
     const { getAccessToken, getIdTokenClaims, isAuthenticated, isLoading } = useLogto();
     const user = useEggAiStore((state) => state.user);
@@ -17,7 +19,9 @@ export function EggAiSession({ children }: { children: ReactNode }) {
     const grantGate = useEggAiStore((state) => state.grantGate);
     const setProvisioning = useEggAiStore((state) => state.setProvisioning);
     const setError = useEggAiStore((state) => state.setError);
+    const clear = useEggAiStore((state) => state.clear);
     const applyNewAPITokenAsChannel = useConfigStore((state) => state.applyNewAPITokenAsChannel);
+    const hasEggAiChannel = useConfigStore((state) => state.config.localChannels.some((channel) => channel.id.startsWith("new-api-") && Boolean(channel.name.trim())));
     const running = useRef(false);
 
     useEffect(() => {
@@ -30,11 +34,16 @@ export function EggAiSession({ children }: { children: ReactNode }) {
             setUser(eggAiUserFromClaims(claims));
             const apiAddress = NEW_API_PUBLIC_URL || NEW_API_BASE_URL;
             if (apiAddress) {
+                if (provisionedInCurrentRuntime && hasEggAiChannel) {
+                    grantGate();
+                    return;
+                }
                 if (!NEW_API_LOGTO_AUDIENCE) throw new Error("请先配置 NEW_API_LOGTO_AUDIENCE");
                 const accessToken = await getAccessToken(NEW_API_LOGTO_AUDIENCE);
                 const next = await fetchNewAPIConfig(accessToken);
                 if (!next.configured) throw new Error(next.message || `${next.displayName} 当前不可用`);
                 applyNewAPITokenAsChannel(next);
+                provisionedInCurrentRuntime = true;
             }
             grantGate();
         })()
@@ -43,7 +52,12 @@ export function EggAiSession({ children }: { children: ReactNode }) {
                 running.current = false;
                 setProvisioning(false);
             });
-    }, [applyNewAPITokenAsChannel, getAccessToken, getIdTokenClaims, grantGate, hasPassedGate, isAuthenticated, isLoading, setError, setProvisioning, setUser, user]);
+    }, [applyNewAPITokenAsChannel, getAccessToken, getIdTokenClaims, grantGate, hasEggAiChannel, hasPassedGate, isAuthenticated, isLoading, setError, setProvisioning, setUser, user]);
+
+    useEffect(() => {
+        if (!isEggAiConfigured || isLoading || isAuthenticated || !hasPassedGate) return;
+        clear();
+    }, [clear, hasPassedGate, isAuthenticated, isLoading]);
 
     return <>{children}</>;
 }

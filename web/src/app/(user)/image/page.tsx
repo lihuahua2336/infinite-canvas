@@ -50,6 +50,7 @@ import { deleteImageGenerationLogs, fetchImageGenerationLogs, saveImageGeneratio
 import { deleteStoredImages, imageToDataUrl, resolveImageUrl, uploadImage, uploadRemoteImageToServer } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireEggAi } from "@/hooks/use-require-eggai";
 import type { ReferenceImage } from "@/types/image";
 
 type GeneratedImage = {
@@ -136,6 +137,7 @@ export default function ImagePage() {
     const effectiveConfig = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
+    const requireEggAi = useRequireEggAi();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const token = useUserStore((state) => state.token);
@@ -393,6 +395,7 @@ export default function ImagePage() {
     };
 
     const generate = async () => {
+        if (!requireEggAi()) return;
         const snapshot = buildRequestSnapshot();
         if (!snapshot) return;
         setPrompt("");
@@ -2817,8 +2820,6 @@ function buildLog({
 function formatLogTime(value: number) {
     return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
-
-
 
 
 

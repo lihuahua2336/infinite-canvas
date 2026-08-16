@@ -474,7 +474,7 @@ export function applyNewAPITokenAsChannel(config: AiConfig, next: NewAPIConfigRe
     const channel = {
         id: newAPIChannelId(token.tokenId),
         protocol: "openai" as const,
-        name: `${next.displayName} · ${token.tokenName}`,
+        name: token.group || next.displayName,
         baseUrl: token.baseUrl,
         apiKey: token.apiKey,
         models: next.models,

@@ -25,6 +25,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useRequireEggAi } from "@/hooks/use-require-eggai";
 import { createCanvasAgentState, runCanvasAgent } from "../agent/canvas-agent-runtime";
 import type { CanvasAgentContext } from "../agent/canvas-agent-context";
 import type { CanvasAgentAction, CanvasAgentToolResult } from "../agent/canvas-agent-tools";
@@ -94,6 +95,7 @@ export function CanvasAssistantPanel({
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
+    const requireEggAi = useRequireEggAi();
     const cleanupImages = useAssetStore((state) => state.cleanupImages);
     const abortRef = useRef<AbortController | null>(null);
     const consumedInitialRequestRef = useRef<typeof initialRequest>(null);
@@ -211,6 +213,7 @@ export function CanvasAssistantPanel({
     };
 
     const sendMessage = async (text: string, savedReferences?: CanvasAssistantReference[]) => {
+        if (!requireEggAi()) return;
         const session = activeSession || createSession();
         if (!activeSession) {
             commitSessions([session], session.id);

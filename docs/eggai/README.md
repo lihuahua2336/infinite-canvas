@@ -11,7 +11,7 @@ description: 使用 Logto 为无限画布接入 EggAI 登录，并自动配置 N
 
 浏览器中的 Logto SDK 负责完成 OIDC 登录。登录成功后，前端读取 ID Token 中的用户资料，并使用 access token 请求 New API 的生态接口，获取模型和令牌，然后把选中的令牌保存到浏览器本地渠道配置中。
 
-未配置 Logto 时，项目仍使用原有的账号密码和 Linux.do 登录流程。New API 配置也是可选的；只配置 Logto 时可以登录，但不会自动创建模型渠道。
+EggAI/Logto 是用户侧的强制登录方式。未配置 Logto 时，业务页面会跳转到登录页并显示配置错误；用户侧不再提供账号密码或 Linux.do 登录入口。
 
 ## Logto 配置
 
@@ -39,7 +39,7 @@ NEXT_PUBLIC_LOGTO_SCOPE=openid profile email
 
 ## New API 自动渠道
 
-如果希望登录后自动获得模型渠道，再补充：
+登录后自动获得模型渠道需要补充：
 
 ```dotenv
 NEXT_PUBLIC_NEW_API_PUBLIC_URL=https://你的-new-api.example.com
@@ -53,7 +53,9 @@ New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用�
 - `/api/ecosystem/models`
 - `/api/ecosystem/tokens`
 
-如果没有可用模型或令牌，登录会停留在授权提示页，并显示 New API 返回的错误信息。
+系统固定选取返回列表中的第一个令牌，并使用令牌的 EggAI 分组名作为本地渠道名称。如果没有可用模型或令牌，登录会停留在授权提示页，并显示 New API 返回的错误信息。
+
+同一页面运行期间已有 EggAI 本地渠道时不会重复请求。浏览器刷新后会重新获取首个令牌和模型列表，并更新已有 EggAI 渠道。
 
 ## 部署步骤
 
@@ -61,7 +63,7 @@ New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用�
 2. 在 New API 中配置对应的 Logto 资源、scope 和用户令牌。
 3. 将上述变量写入部署环境的 `.env`。
 4. 重新构建并启动前端，使 `NEXT_PUBLIC_*` 变量进入浏览器构建产物。
-5. 打开 `/login`，点击“使用 EggAI 登录”。
+5. 打开任意业务页面；未登录时会自动跳转至 EggAI 授权，也可以从 `/login` 手动开始登录。
 6. 登录完成后返回画布，检查配置弹窗中的本地渠道和模型列表。
 
 ## 安全说明
