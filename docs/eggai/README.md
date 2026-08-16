@@ -27,26 +27,35 @@ https://你的站点域名/callback
 http://localhost:3000/callback
 ```
 
-在部署环境的 `.env` 中设置：
+使用 Docker Compose 部署时，在项目根目录 `.env` 中设置：
 
 ```dotenv
-NEXT_PUBLIC_LOGTO_ISSUER=https://你的租户.logto.app/oidc
-NEXT_PUBLIC_LOGTO_CLIENT_ID=你的应用 ID
-NEXT_PUBLIC_LOGTO_SCOPE=openid profile email
+LOGTO_ISSUER=https://你的租户.logto.app/oidc
+LOGTO_INTERNAL_ISSUER=
+LOGTO_CLIENT_ID=你的应用 ID
+LOGTO_CLIENT_SECRET=你的应用密钥
+LOGTO_SCOPE=openid profile email
+SESSION_SECRET=随机生成的长字符串
+COOKIE_SECURE=true
 ```
 
-`NEXT_PUBLIC_LOGTO_ISSUER` 可以填写带 `/oidc` 的 Issuer 地址，前端会自动去掉末尾路径后初始化 Logto SDK。
+Compose 会在构建时把 Issuer、Client ID 和 Scope 映射到对应的 `NEXT_PUBLIC_*` 变量。`LOGTO_ISSUER` 可以填写带 `/oidc` 的 Issuer 地址，前端会自动去掉末尾路径后初始化 Logto SDK。`LOGTO_CLIENT_SECRET` 和 `SESSION_SECRET` 只在容器运行时注入，不会作为前端构建参数。
+
+不使用 Docker、直接启动前端开发服务时，需要改用 `NEXT_PUBLIC_LOGTO_ISSUER`、`NEXT_PUBLIC_LOGTO_CLIENT_ID` 和 `NEXT_PUBLIC_LOGTO_SCOPE`。
 
 ## New API 自动渠道
 
 登录后自动获得模型渠道需要补充：
 
 ```dotenv
-NEXT_PUBLIC_NEW_API_PUBLIC_URL=https://你的-new-api.example.com
-NEXT_PUBLIC_NEW_API_LOGTO_AUDIENCE=https://你的-new-api.example.com
-NEXT_PUBLIC_NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read
-NEXT_PUBLIC_NEW_API_DISPLAY_NAME=New API
+NEW_API_BASE_URL=https://你的-new-api.example.com
+NEW_API_PUBLIC_URL=https://你的-new-api.example.com
+NEW_API_LOGTO_AUDIENCE=https://你的-new-api.example.com/api
+NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read ecosystem:groups:read
+NEW_API_DISPLAY_NAME=EggAI
 ```
+
+Compose 同样会把这些公开项映射到前端构建变量。直接启动前端开发服务时，在变量名前加 `NEXT_PUBLIC_`。
 
 New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用户在 New API 中已有可用模型和生态令牌。前端登录后会读取：
 
@@ -62,13 +71,13 @@ New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用�
 1. 在 Logto 中创建应用并配置 `/callback` 回调地址。
 2. 在 New API 中配置对应的 Logto 资源、scope 和用户令牌。
 3. 将上述变量写入部署环境的 `.env`。
-4. 重新构建并启动前端，使 `NEXT_PUBLIC_*` 变量进入浏览器构建产物。
+4. 执行 `docker compose up -d --build`，使公开配置进入浏览器构建产物。
 5. 打开任意业务页面；未登录时会自动跳转至 EggAI 授权，也可以从 `/login` 手动开始登录。
 6. 登录完成后返回画布，检查配置弹窗中的本地渠道和模型列表。
 
 ## 安全说明
 
-`NEXT_PUBLIC_*` 变量会暴露给浏览器，因此不能在其中放置管理员密钥或 New API 的服务端密钥。New API 生态令牌也会被保存到当前浏览器的本地配置中；请为用户创建权限受限、可撤销的令牌，并避免在公共设备上保持登录状态。
+Compose 映射到 `NEXT_PUBLIC_*` 的变量会暴露给浏览器，因此不能把 `LOGTO_CLIENT_SECRET`、`SESSION_SECRET`、管理员密钥或 New API 服务端密钥加入构建参数。New API 生态令牌也会被保存到当前浏览器的本地配置中；请为用户创建权限受限、可撤销的令牌，并避免在公共设备上保持登录状态。
 
 当前实现由浏览器直接请求 Logto 和 New API，服务端不会代替浏览器保存 EggAI access token。生产环境需要确保 New API 的 CORS、HTTPS 和 Logto 资源配置允许该站点访问。
 
@@ -80,7 +89,7 @@ New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用�
 
 ### 提示缺少 `NEW_API_LOGTO_AUDIENCE`
 
-配置了 `NEXT_PUBLIC_NEW_API_PUBLIC_URL` 后，必须同时配置 New API 在 Logto 中对应的 audience。
+配置了 `NEW_API_PUBLIC_URL` 后，必须同时配置 New API 在 Logto 中对应的 audience。
 
 ### 提示没有可用模型或令牌
 
