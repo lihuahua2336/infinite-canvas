@@ -31,11 +31,15 @@ http://localhost:3000/callback
 
 ```dotenv
 LOGTO_ISSUER=https://你的租户.logto.app/oidc
+LOGTO_INTERNAL_ISSUER=
 LOGTO_CLIENT_ID=你的应用 ID
+LOGTO_CLIENT_SECRET=你的应用密钥
 LOGTO_SCOPE=openid profile email
+SESSION_SECRET=随机生成的长字符串
+COOKIE_SECURE=true
 ```
 
-Compose 会在构建时把 Issuer、Client ID 和 Scope 映射到对应的 `NEXT_PUBLIC_*` 变量。`LOGTO_ISSUER` 可以填写带 `/oidc` 的 Issuer 地址，前端会自动去掉末尾路径后初始化 Logto SDK。当前登录使用 Authorization Code + PKCE 的 SPA 流程，不需要配置 Client Secret 或服务端 Session Secret。
+Compose 会在构建时把 Issuer、Client ID 和 Scope 映射到对应的 `NEXT_PUBLIC_*` 变量。`LOGTO_ISSUER` 可以填写带 `/oidc` 的 Issuer 地址，前端会自动去掉末尾路径后初始化 Logto SDK。`LOGTO_CLIENT_SECRET` 和 `SESSION_SECRET` 只在容器运行时注入，不会作为前端构建参数。
 
 不使用 Docker、直接启动前端开发服务时，需要改用 `NEXT_PUBLIC_LOGTO_ISSUER`、`NEXT_PUBLIC_LOGTO_CLIENT_ID` 和 `NEXT_PUBLIC_LOGTO_SCOPE`。
 
@@ -46,12 +50,12 @@ Compose 会在构建时把 Issuer、Client ID 和 Scope 映射到对应的 `NEXT
 ```dotenv
 NEW_API_BASE_URL=https://你的-new-api.example.com
 NEW_API_PUBLIC_URL=https://你的-new-api.example.com
-NEW_API_LOGTO_AUDIENCE=https://你的-new-api.example.com
-NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read
+NEW_API_LOGTO_AUDIENCE=https://你的-new-api.example.com/api
+NEW_API_LOGTO_SCOPE=ecosystem:me ecosystem:models:read ecosystem:tokens:read ecosystem:groups:read
 NEW_API_DISPLAY_NAME=EggAI
 ```
 
-Compose 同样会把这些公开项映射到前端构建变量。`NEW_API_LOGTO_AUDIENCE` 是 Logto API Resource Identifier，不是 ecosystem 接口路径，不要在站点根地址后追加 `/api`。直接启动前端开发服务时，在变量名前加 `NEXT_PUBLIC_`。
+Compose 同样会把这些公开项映射到前端构建变量。直接启动前端开发服务时，在变量名前加 `NEXT_PUBLIC_`。
 
 New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用户在 New API 中已有可用模型和生态令牌。前端登录后会读取：
 
@@ -73,7 +77,7 @@ New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用�
 
 ## 安全说明
 
-Compose 映射到 `NEXT_PUBLIC_*` 的变量会暴露给浏览器，因此不能配置 Logto Client Secret、Session Secret、管理员密钥或 New API 服务端密钥。New API 生态令牌也会被保存到当前浏览器的本地配置中；请为用户创建权限受限、可撤销的令牌，并避免在公共设备上保持登录状态。
+Compose 映射到 `NEXT_PUBLIC_*` 的变量会暴露给浏览器，因此不能把 `LOGTO_CLIENT_SECRET`、`SESSION_SECRET`、管理员密钥或 New API 服务端密钥加入构建参数。New API 生态令牌也会被保存到当前浏览器的本地配置中；请为用户创建权限受限、可撤销的令牌，并避免在公共设备上保持登录状态。
 
 当前实现由浏览器直接请求 Logto 和 New API，服务端不会代替浏览器保存 EggAI access token。生产环境需要确保 New API 的 CORS、HTTPS 和 Logto 资源配置允许该站点访问。
 

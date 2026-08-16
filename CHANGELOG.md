@@ -6,7 +6,6 @@
 + [新增] 补充 EggAI/Logto 与 New API 的部署配置文档
 + [调整] 用户侧改为强制 EggAI 登录，移除 GitHub 与 Linux.do 登录入口，并按刷新周期同步首个 EggAI 渠道
 + [修复] Docker 构建时注入 EggAI Logto 与 New API 公开配置，避免容器仅重启后前端仍显示未配置
-+ [修复] 恢复原 EggAI SPA 的 New API Resource audience 与 scope 配置，避免生态令牌校验失败
 
 ## v0.5.4 - 2026-08-16
 
