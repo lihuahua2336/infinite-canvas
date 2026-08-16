@@ -2,12 +2,15 @@
 
 ## Unreleased
 
+## v0.5.5 - 2026-08-17
+
 + [新增] 以 tigerowo 上游 Next.js 基线移植 EggAI Logto 登录，并在登录后自动配置 New API 渠道
 + [新增] 补充 EggAI/Logto 与 New API 的部署配置文档
 + [调整] 用户侧改为按聊天、生图操作触发 EggAI 登录，退出后可匿名浏览，并按刷新周期同步首个 EggAI 渠道
 + [调整] EggAI 登录迁移到 Logto 官方 Next.js App Router 服务端流程，并通过服务端代理同步 New API 渠道
 + [修复] 修复 Logto 服务端回调错误传递 NextURL 导致 state 无法校验的问题
 + [修复] 修复生图、工作流生图和视频历史仅保存临时 URL 导致刷新后媒体失效的问题
++ [修复] Docker Compose 改用 EggAI 分支发布镜像，并在版本发布时同步更新 latest 标签
 
 ## v0.5.4 - 2026-08-16
 
