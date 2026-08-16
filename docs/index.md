@@ -14,6 +14,7 @@
 
 ## 开发文档
 
+- [EggAI 登录与 New API 配置](eggai/README.md)
 - [本地开发](backend/local-development.md)
 - [接口响应约定](backend/api-response.md)
 - [系统配置数据结构](backend/system-settings.md)

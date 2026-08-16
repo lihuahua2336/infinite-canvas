@@ -141,6 +141,7 @@ https://infinite-canvas-cpco.onrender.com?apiKey={key}&baseUrl={address}
 - [后端数据库说明](docs/backend/backend-database.md)
 - [系统配置数据结构](docs/backend/system-settings.md)
 - [接口响应约定](docs/backend/api-response.md)
+- [EggAI 登录与 New API 配置](docs/eggai/README.md)
 
 ## 赞助支持
 

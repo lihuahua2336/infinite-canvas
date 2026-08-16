@@ -3,6 +3,7 @@
 ## Unreleased
 
 + [新增] 以 tigerowo 上游 Next.js 基线移植 EggAI Logto 登录，并在登录后自动配置 New API 渠道
++ [新增] 补充 EggAI/Logto 与 New API 的部署配置文档
 
 ## v0.5.4 - 2026-08-16
 
