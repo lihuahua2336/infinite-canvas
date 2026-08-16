@@ -977,7 +977,15 @@ export default function VideoPage() {
                     setResults((value) => updateResultByLogId(value, log.id, { status: "failed", task, error: nextLog.error, errorDetail: nextLog.errorDetail, durationMs: nextLog.durationMs, lastPolledAt: nextLog.lastPolledAt }));
                     return;
                 }
-                const video = videoFromTaskResponse(task, durationMs);
+                const remoteVideo = videoFromTaskResponse(task, durationMs);
+                let video = remoteVideo;
+                try {
+                    const blob = await downloadRemoteMedia(remoteVideo.url);
+                    const stored = await uploadMediaFile(blob, "generated-video");
+                    video = { ...remoteVideo, url: stored.url, storageKey: stored.storageKey, width: stored.width || remoteVideo.width, height: stored.height || remoteVideo.height, bytes: stored.bytes, mimeType: stored.mimeType };
+                } catch {
+                    message.warning("视频已生成，但本地保存失败，请及时下载");
+                }
                 const nextLog = { ...baseLog, status: "成功" as const, video, error: undefined, errorDetail: undefined };
                 await finalizeGenerationLog(nextLog);
                 setResults((value) => value.filter((item) => item.taskLogId !== log.id && item.id !== log.id));

@@ -490,10 +490,13 @@ export default function ImagePage() {
                     throw new Error("接口没有返回图片");
                 }
 
-                const durableImage = {
-                    ...image,
-                    storageKey: "",
-                };
+                let durableImage = image;
+                try {
+                    const stored = await uploadImage(image.dataUrl, { localOnly: true });
+                    durableImage = { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+                } catch {
+                    message.warning("图片已生成，但本地保存失败，请及时下载");
+                }
                 
                 // 更新结果状态
                 setResults((value) => updateResult(value, id, { image: durableImage }));
@@ -2820,8 +2823,6 @@ function buildLog({
 function formatLogTime(value: number) {
     return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
-
-
 
 
 

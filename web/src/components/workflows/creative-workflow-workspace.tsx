@@ -11,7 +11,7 @@ import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
-import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
+import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { createCanvasImageTask, requestEdit, requestGeneration, requestImageQuestion, type CanvasImageTask } from "@/services/api/image";
 import { saveImageGenerationLogs } from "@/services/api/generation-logs";
 import { deleteUserWorkflow, draftUserWorkflow, fetchUserConfig, fetchUserWorkflows, saveUserWorkflow, type CreativeWorkflowRecord } from "@/services/api/user-config";
@@ -839,18 +839,13 @@ export function CreativeWorkflowWorkspace({
             const durationMs = performance.now() - performanceStartedAt;
             const storedImages = await Promise.all(
                 flattened.map(async (image) => {
-                    const meta = await readImageMeta(image.dataUrl);
-                    return {
-                        id: image.id,
-                        dataUrl: image.dataUrl,
-                        displayUrl: image.dataUrl,
-                        storageKey: "",
-                        durationMs,
-                        width: meta.width,
-                        height: meta.height,
-                        bytes: getDataUrlByteSize(image.dataUrl),
-                        mimeType: meta.mimeType,
-                    };
+                    try {
+                        const stored = await uploadImage(image.dataUrl, { localOnly: true });
+                        return { id: image.id, dataUrl: stored.url, displayUrl: stored.url, storageKey: stored.storageKey, durationMs, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+                    } catch {
+                        message.warning("图片已生成，但本地保存失败，请及时下载");
+                        return { id: image.id, dataUrl: image.dataUrl, displayUrl: image.dataUrl, storageKey: "", durationMs, width: 0, height: 0, bytes: 0, mimeType: "image/png" };
+                    }
                 }),
             );
             const category = await ensureWorkflowCategory(workflow.name);
@@ -2123,8 +2118,6 @@ function referenceUsedByWorkflowTask(reference: ReferenceImage, tasks: WorkflowT
 function formatDate(value: number) {
     return new Date(value).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
-
-
 
 
 
