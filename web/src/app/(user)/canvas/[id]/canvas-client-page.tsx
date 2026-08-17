@@ -569,6 +569,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 if (pollingImageNodeIdsRef.current.has(node.id) || !node.metadata?.imageTaskId) return;
                 pollingImageNodeIdsRef.current.add(node.id);
                 void pollCanvasImageTaskStatus(node.metadata.imageTaskId)
+                    .then(persistCanvasImageTask)
                     .then((task) => {
                         setNodes((prev) => applyCanvasImageTaskUpdate(prev, node.id, task, node.metadata?.startedAt || Date.now(), { width: node.width, height: node.height }));
                         setConnections((prev) => applyCanvasImageTaskConnections(prev, node.id, task));
@@ -2221,7 +2222,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             setSelectedConnectionId(null);
             setDialogNodeId(childId);
             try {
-                const task = await createCanvasImageTask(generationConfig, prompt, [markedReference], { nodeId: childId, sourceId: projectId, clientTaskId });
+                const task = await persistCanvasImageTask(await createCanvasImageTask(generationConfig, prompt, [markedReference], { nodeId: childId, sourceId: projectId, clientTaskId }));
                 setNodes((prev) => applyCanvasImageTaskUpdate(prev, childId, task, childNode.metadata?.startedAt || Date.now(), { width: node.width, height: node.height }));
                 setConnections((prev) => applyCanvasImageTaskConnections(prev, childId, task));
             } catch (error) {
@@ -2301,7 +2302,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             setSelectedNodeIds(new Set([childId]));
             setDialogNodeId(childId);
             try {
-                const task = await createCanvasImageTask(generationConfig, prompt, referenceImages, { nodeId: childId, sourceId: projectId, clientTaskId });
+                const task = await persistCanvasImageTask(await createCanvasImageTask(generationConfig, prompt, referenceImages, { nodeId: childId, sourceId: projectId, clientTaskId }));
                 setNodes((prev) => applyCanvasImageTaskUpdate(prev, childId, task, startedAt, { width: imageConfig.width, height: imageConfig.height }));
                 setConnections((prev) => applyCanvasImageTaskConnections(prev, childId, task));
             } catch (error) {
@@ -2620,7 +2621,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     const taskResults = await Promise.all(
                         targetIds.map(async (targetId) => {
                             try {
-                                const task = await createCanvasImageTask({ ...panoramaGenerationConfig, count: "1", quality: panoramaGenerationConfig.quality === "auto" ? "medium" : panoramaGenerationConfig.quality }, panoramaPrompt, referenceImages, { nodeId: targetId, sourceId: projectId, clientTaskId: targetTaskIds[targetId] });
+                                const task = await persistCanvasImageTask(await createCanvasImageTask({ ...panoramaGenerationConfig, count: "1", quality: panoramaGenerationConfig.quality === "auto" ? "medium" : panoramaGenerationConfig.quality }, panoramaPrompt, referenceImages, { nodeId: targetId, sourceId: projectId, clientTaskId: targetTaskIds[targetId] }));
                                 if (task.image_url || task.url) {
                                     setNodes((prev) => {
                                         const root = prev.find((node) => node.id === rootId);
@@ -2772,7 +2773,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     const taskResults = await Promise.all(
                         targetIds.map(async (targetId) => {
                             try {
-                                const task = await createCanvasImageTask({ ...generationConfig, count: "1" }, requestPrompt, referenceImages, { nodeId: targetId, sourceId: projectId, clientTaskId: targetTaskIds[targetId] });
+                                const task = await persistCanvasImageTask(await createCanvasImageTask({ ...generationConfig, count: "1" }, requestPrompt, referenceImages, { nodeId: targetId, sourceId: projectId, clientTaskId: targetTaskIds[targetId] }));
                                 if (task.image_url || task.url) {
                                     setNodes((prev) => {
                                         const root = prev.find((node) => node.id === rootId);
@@ -3427,7 +3428,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     return;
                 }
 
-                const task = await createCanvasImageTask({ ...generationConfig, quality: isPanorama && generationConfig.quality === "auto" ? "medium" : generationConfig.quality }, requestPrompt, useReferenceImages ? retryImages : [], { nodeId: node.id, sourceId: projectId, clientTaskId: retryImageTaskId });
+                const task = await persistCanvasImageTask(await createCanvasImageTask({ ...generationConfig, quality: isPanorama && generationConfig.quality === "auto" ? "medium" : generationConfig.quality }, requestPrompt, useReferenceImages ? retryImages : [], { nodeId: node.id, sourceId: projectId, clientTaskId: retryImageTaskId }));
                 const generationMetadata = savedImageMetadata?.generationType
                     ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, channelId: generationConfig.imageChannelId || generationConfig.activeChannelId, size: generationConfig.size, quality: generationConfig.quality, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
                     : buildImageGenerationMetadata(useReferenceImages ? "edit" : "generation", generationConfig, 1, retryImages);
@@ -4660,6 +4661,22 @@ function canvasImageTaskURLs(task: CanvasImageTask) {
     return [...new Set([...(task.image_urls || []), task.image_url || task.url || ""].map((url) => url.trim()).filter(Boolean))];
 }
 
+async function persistCanvasImageTask(task: CanvasImageTask) {
+    const urls = canvasImageTaskURLs(task);
+    if (!urls.length || task.storageKey) return task;
+    const stored = await Promise.all(urls.map((url) => uploadImage(url, { localOnly: true }).catch(() => null)));
+    if (!stored.some(Boolean)) return task;
+    const durableUrls = urls.map((url, index) => stored[index]?.url || url);
+    return {
+        ...task,
+        url: durableUrls[0],
+        image_url: durableUrls[0],
+        image_urls: durableUrls.length > 1 ? durableUrls : task.image_urls,
+        storageKey: stored[0]?.storageKey || "",
+        storageKeys: stored.map((image) => image?.storageKey || ""),
+    };
+}
+
 function canvasImageTaskChildIds(nodeId: string, task: CanvasImageTask) {
     return canvasImageTaskURLs(task).map((_, index) => `${nodeId}-result-${index}`);
 }
@@ -4696,7 +4713,7 @@ function applyCanvasImageTaskUpdate(nodes: CanvasNodeData[], nodeId: string, tas
             metadata: {
                 ...metadata,
                 content: url,
-                storageKey: task.storageKey || "",
+                storageKey: task.storageKeys?.[0] || task.storageKey || "",
                 status: NODE_STATUS_SUCCESS,
                 naturalWidth,
                 naturalHeight,
@@ -4725,7 +4742,7 @@ function applyCanvasImageTaskUpdate(nodes: CanvasNodeData[], nodeId: string, tas
                 content: url,
                 status: NODE_STATUS_SUCCESS,
                 progress: 100,
-                storageKey: "",
+                storageKey: task.storageKeys?.[index] || "",
                 mimeType: "image/png",
                 bytes: 0,
                 imageTaskId: undefined,

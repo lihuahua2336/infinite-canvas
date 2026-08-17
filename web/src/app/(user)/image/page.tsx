@@ -833,13 +833,13 @@ export default function ImagePage() {
                         return;
                     }
                     if ((task.image_urls?.length || 0) > 1) {
-                        const nextLogs = imageLogsFromTask(log, task);
+                        const nextLogs = await Promise.all(imageLogsFromTask(log, task).map(persistImageLogImages));
                         await Promise.all(nextLogs.map(saveLog));
                         setResults((value) => value.filter((item) => !imageResultMatchesLog(item, nextLogs[0])));
                         return;
                     }
 
-                    const nextLog = imageLogFromTask(log, task);
+                    const nextLog = await persistImageLogImages(imageLogFromTask(log, task));
                     await saveLog(nextLog);
                     if (nextLog.status === "生成中") {
                         setResults((value) => updateResultByLogId(value, log.id, { task, progress: task.progress, durationMs: nextLog.durationMs, lastPolledAt: nextLog.lastPolledAt }));
@@ -2488,6 +2488,21 @@ function imageLogFromTask(log: GenerationLog, task: CanvasImageTask): Generation
     return { ...log, task, durationMs, lastPolledAt: Date.now() };
 }
 
+async function persistImageLogImages(log: GenerationLog) {
+    const images = await Promise.all(
+        log.images.map(async (image) => {
+            if (image.storageKey || !image.dataUrl) return image;
+            try {
+                const stored = await uploadImage(image.dataUrl, { localOnly: true });
+                return { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+            } catch {
+                return image;
+            }
+        }),
+    );
+    return { ...log, images, thumbnails: images.map((image) => image.dataUrl) };
+}
+
 function parseImageTaskTime(value: unknown) {
     if (typeof value === "number") return value > 100000000000 ? value : value * 1000;
     if (typeof value !== "string" || !value.trim()) return 0;
@@ -2823,7 +2838,6 @@ function buildLog({
 function formatLogTime(value: number) {
     return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
-
 
 
 

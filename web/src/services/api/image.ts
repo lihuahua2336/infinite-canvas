@@ -47,6 +47,7 @@ export type CanvasImageTask = {
     image_url?: string;
     image_urls?: string[];
     storageKey?: string;
+    storageKeys?: string[];
     width?: number;
     height?: number;
     mimeType?: string;
