@@ -92,25 +92,3 @@ export async function saveUserWorkflow<T>(token: string, workflow: CreativeWorkf
 export async function deleteUserWorkflow(token: string, id: string) {
     return apiDelete<boolean>(`/api/v1/workflows/${encodeURIComponent(id)}`, token);
 }
-
-export type WorkflowAgentDraftResponse<T = unknown> = {
-    draft: T;
-    warnings: string[];
-    model: string;
-};
-
-export async function draftUserWorkflow<T>(
-    token: string,
-    payload: {
-        prompt: string;
-        scope: "private" | "public";
-        model?: string;
-        channelId?: string;
-        channelMode?: "remote" | "local";
-        baseUrl?: string;
-        apiKey?: string;
-        references?: string[];
-    },
-) {
-    return apiPost<WorkflowAgentDraftResponse<T>>("/api/v1/workflows/agent-draft", payload, token);
-}

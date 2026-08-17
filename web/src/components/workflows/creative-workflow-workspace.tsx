@@ -12,9 +12,11 @@ import { ModelPicker } from "@/components/model-picker";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
+import { useRequireEggAi } from "@/hooks/use-require-eggai";
 import { createCanvasImageTask, requestEdit, requestGeneration, requestImageQuestion, type CanvasImageTask } from "@/services/api/image";
 import { saveImageGenerationLogs } from "@/services/api/generation-logs";
-import { deleteUserWorkflow, draftUserWorkflow, fetchUserConfig, fetchUserWorkflows, saveUserWorkflow, type CreativeWorkflowRecord } from "@/services/api/user-config";
+import { deleteUserWorkflow, fetchUserConfig, fetchUserWorkflows, saveUserWorkflow, type CreativeWorkflowRecord } from "@/services/api/user-config";
+import { requestWorkflowAgentDraft } from "@/services/api/workflow-agent";
 import { deleteStoredImages, imageToDataUrl, uploadImage } from "@/services/image-storage";
 import { defaultConfig, localChannelForActiveModel, normalizeLocalChannels, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -221,6 +223,7 @@ export function CreativeWorkflowWorkspace({
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const requireEggAi = useRequireEggAi();
     const token = useUserStore((state) => state.token);
     const isUserReady = useUserStore((state) => state.isReady);
     const [workflows, setWorkflows] = useState<CreativeWorkflow[]>([]);
@@ -529,13 +532,10 @@ export function CreativeWorkflowWorkspace({
     };
 
     const runWorkflowAgent = async () => {
+        if (!requireEggAi()) return;
         const text = agentPrompt.trim();
         if (!text) {
             message.error("请输入工作流需求");
-            return;
-        }
-        if (!token) {
-            message.warning("请先登录后使用工作流创建 Agent");
             return;
         }
         setAgentLoading(true);
@@ -547,20 +547,10 @@ export function CreativeWorkflowWorkspace({
                 openConfigDialog(true);
                 return;
             }
-            const localChannel = effectiveConfig.channelMode === "local" ? localChannelForActiveModel(textConfig) : null;
             const referenceDataUrls = await Promise.all(agentReferences.map((image) => imageToDataUrl(image)));
-            const result = await draftUserWorkflow<Partial<CreativeWorkflow>>(token, {
-                prompt: text,
-                scope: agentScope,
-                model: textModel,
-                channelId: textChannelId,
-                channelMode: effectiveConfig.channelMode,
-                baseUrl: localChannel?.baseUrl,
-                apiKey: localChannel?.apiKey,
-                references: referenceDataUrls.filter(Boolean),
-            });
-            setAgentDraft(normalizeAgentDraft(result.draft, effectiveConfig, agentScope));
-            setAgentWarnings(result.warnings || []);
+            const draft = await requestWorkflowAgentDraft<Partial<CreativeWorkflow>>(textConfig, text, agentScope, referenceDataUrls.filter(Boolean));
+            setAgentDraft(normalizeAgentDraft(draft, effectiveConfig, agentScope));
+            setAgentWarnings([]);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "工作流 Agent 生成失败");
         } finally {
@@ -2118,7 +2108,6 @@ function referenceUsedByWorkflowTask(reference: ReferenceImage, tasks: WorkflowT
 function formatDate(value: number) {
     return new Date(value).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
-
 
 
 

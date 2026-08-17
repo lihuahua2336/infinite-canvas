@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.5.6 - 2026-08-17
+
++ [调整] 工作流创建 Agent 改为使用 EggAI 登录和浏览器当前文本渠道直连模型，不再依赖旧项目账号 token 与后端草稿接口
+
 ## v0.5.5 - 2026-08-17
 
 + [新增] 以 tigerowo 上游 Next.js 基线移植 EggAI Logto 登录，并在登录后自动配置 New API 渠道
