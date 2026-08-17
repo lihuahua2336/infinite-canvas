@@ -20,6 +20,7 @@ description: 当前后端主要数据表与字段说明
 当前启动时执行 `AutoMigrate`，自动维护以下表：
 
 - `users`
+- `auth_bootstraps`
 - `credit_logs`
 - `prompts`
 - `assets`
@@ -55,11 +56,22 @@ description: 当前后端主要数据表与字段说明
 | `github_id` | string | GitHub 用户 ID |
 | `linux_do_id` | string | Linux.do 用户 ID |
 | `wechat_id` | string | 微信用户 ID |
+| `logto_id` | string | Logto 用户 `sub`，可空唯一索引 |
 | `status` | string | 用户状态：`active`、`ban` |
 | `last_login_at` | string | 最近登录时间 |
 | `extra` | json | 扩展信息，第三方资料按平台命名空间保存，如 `linuxDo` |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
+
+### auth_bootstraps
+
+一次性认证初始化记录表。`logto-primary-admin` 记录由数据库事务原子认领，确保并发首次登录时只有一个 Logto 用户获得初始管理员角色。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 初始化项主键 |
+| `user_id` | string | 认领该初始化项的本地用户 ID |
+| `created_at` | string | 创建时间 |
 
 ### user_configs
 

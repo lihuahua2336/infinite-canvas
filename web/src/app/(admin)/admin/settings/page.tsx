@@ -507,11 +507,6 @@ export default function AdminSettingsPage() {
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
-                                        <Form.Item name={["public", "auth", "allowRegister"]} label="是否允许用户注册" extra="关闭后隐藏注册入口，注册接口也会拒绝新用户创建" valuePropName="checked">
-                                            <Switch />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
                                         <Typography.Title level={5}>模型算力点</Typography.Title>
                                         <Table
                                             rowKey="model"

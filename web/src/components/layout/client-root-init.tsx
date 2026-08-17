@@ -22,7 +22,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const channelMode = useConfigStore((state) => state.config.channelMode);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-    const isLoginPage = pathname === "/login" || pathname === "/admin/login";
+    const isLoginPage = pathname === "/login";
     const adminRemoteTokenRef = useRef("");
 
     useEffect(() => {

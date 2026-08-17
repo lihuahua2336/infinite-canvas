@@ -31,11 +31,19 @@ type User struct {
 	GithubID    string     `json:"githubId"`
 	LinuxDoID   string     `json:"linuxDoId" gorm:"index"`
 	WechatID    string     `json:"wechatId"`
+	LogtoID     *string    `json:"logtoId,omitempty" gorm:"uniqueIndex"`
 	Status      UserStatus `json:"status"`
 	LastLoginAt string     `json:"lastLoginAt"`
 	Extra       string     `json:"extra" gorm:"type:text"`
 	CreatedAt   string     `json:"createdAt"`
 	UpdatedAt   string     `json:"updatedAt"`
+}
+
+// AuthBootstrap 记录一次性认证初始化结果。
+type AuthBootstrap struct {
+	ID        string `json:"id" gorm:"primaryKey"`
+	UserID    string `json:"userId"`
+	CreatedAt string `json:"createdAt"`
 }
 
 // UserList 用户分页结果。

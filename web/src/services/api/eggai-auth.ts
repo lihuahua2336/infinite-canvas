@@ -1,9 +1,12 @@
 import type { EggAiUser } from "@/lib/eggai";
+import type { AuthSession } from "@/services/api/auth";
 
 export type EggAiSessionResponse = {
     configured: boolean;
     authenticated: boolean;
     user: EggAiUser | null;
+    localSession: AuthSession | null;
+    localSessionError?: string;
 };
 
 export async function fetchEggAiSession(): Promise<EggAiSessionResponse> {

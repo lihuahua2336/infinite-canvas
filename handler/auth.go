@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/tigerowo/infinite-canvas/config"
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/service"
 )
@@ -49,6 +51,26 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	var request loginRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
 	session, err := service.Login(request.Username, request.Password)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, session)
+}
+
+func LogtoSession(w http.ResponseWriter, r *http.Request) {
+	secret := strings.TrimSpace(config.Cfg.SessionSecret)
+	provided := r.Header.Get("X-Auth-Bridge-Secret")
+	if strings.TrimSpace(secret) == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(secret)) != 1 {
+		FailWithStatus(w, http.StatusUnauthorized, "身份桥接认证失败")
+		return
+	}
+	var profile service.LogtoProfile
+	if err := json.NewDecoder(r.Body).Decode(&profile); err != nil {
+		FailWithStatus(w, http.StatusBadRequest, "Logto 用户信息无效")
+		return
+	}
+	session, err := service.LoginWithLogto(profile)
 	if err != nil {
 		FailError(w, err)
 		return

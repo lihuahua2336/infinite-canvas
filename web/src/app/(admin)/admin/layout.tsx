@@ -1,7 +1,7 @@
 "use client";
 
 import { AuditOutlined, FileTextOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
-import { Button, Flex, Layout, Menu, Typography, theme } from "antd";
+import { Button, Flex, Layout, Menu, Result, Typography, theme } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -9,6 +9,7 @@ import { useEffect } from "react";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { adminLayoutStyle } from "@/lib/app-theme";
+import { useEggAiStore } from "@/stores/use-eggai-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 const adminMenus = [
@@ -27,7 +28,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const token = useUserStore((state) => state.token);
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
-    const logout = useUserStore((state) => state.clearSession);
+    const clearLocalSession = useUserStore((state) => state.clearSession);
+    const eggAiUser = useEggAiStore((state) => state.user);
+    const isProvisioning = useEggAiStore((state) => state.isProvisioning);
+    const provisioningError = useEggAiStore((state) => state.error);
+    const clearEggAi = useEggAiStore((state) => state.clear);
     const activeKey = pathname.startsWith("/admin/settings")
         ? "/admin/settings"
         : pathname.startsWith("/admin/assets")
@@ -44,23 +49,49 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const pageTitle = pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/ai-logs") ? "AI 日志" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
 
     useEffect(() => {
-        if (!isReady) return;
-        if (!token) {
+        if (!isReady || isProvisioning) return;
+        if (!eggAiUser) {
             router.replace("/login?redirect=/admin");
             return;
         }
-        if (user?.role !== "admin") {
+        if (token && user?.role !== "admin") {
             router.replace("/");
         }
-    }, [isReady, router, token, user?.role]);
+    }, [eggAiUser, isProvisioning, isReady, router, token, user?.role]);
 
-    if (!isReady || !token || user?.role !== "admin") {
+    const logout = () => {
+        clearLocalSession();
+        clearEggAi();
+        window.location.assign("/api/auth/sign-out");
+    };
+
+    if (!isReady || isProvisioning || !eggAiUser) {
         return (
             <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: antToken.colorBgLayout }}>
                 <span />
             </div>
         );
     }
+
+    if (!token) {
+        return (
+            <Result
+                status="error"
+                title="本地账户初始化失败"
+                subTitle={provisioningError || "Logto 已登录，但未能创建本地权限账户。"}
+                extra={[
+                    <Button type="primary" key="retry" onClick={() => window.location.reload()}>
+                        重试
+                    </Button>,
+                    <Button key="logout" onClick={logout}>
+                        退出登录
+                    </Button>,
+                ]}
+            />
+        );
+    }
+
+    if (user?.role !== "admin") return null;
 
     return (
         <Layout hasSider style={{ height: "100vh", overflow: "hidden", background: antToken.colorBgLayout }}>

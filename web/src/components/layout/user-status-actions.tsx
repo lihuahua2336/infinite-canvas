@@ -51,13 +51,10 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         { key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: () => void logout() },
     ];
 
-    const logout = async () => {
-        if (eggAiUser) {
-            clearEggAi();
-            window.location.assign("/api/auth/sign-out");
-            return;
-        }
+    const logout = () => {
         logoutLocal();
+        clearEggAi();
+        window.location.assign("/api/auth/sign-out");
     };
 
     return (

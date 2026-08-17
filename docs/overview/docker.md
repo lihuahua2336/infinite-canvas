@@ -22,7 +22,7 @@ docker compose up -d
 http://localhost:3000
 ```
 
-默认管理员账号：
+配置 EggAI/Logto 后，第一个登录并创建本地账户的用户自动成为管理员。`.env` 中的以下账号仅用于 Logto 不可用时的应急恢复 API：
 
 ```text
 用户名：admin

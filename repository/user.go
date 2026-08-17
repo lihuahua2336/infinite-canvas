@@ -6,6 +6,7 @@ import (
 
 	"github.com/tigerowo/infinite-canvas/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ListUsers 分页查询用户。
@@ -18,7 +19,7 @@ func ListUsers(q model.Query) ([]model.User, int64, error) {
 	tx := db.Model(&model.User{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ? OR linux_do_id LIKE ?", like, like, like, like)
+		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ? OR linux_do_id LIKE ? OR logto_id LIKE ?", like, like, like, like, like)
 	}
 
 	var total int64
@@ -172,6 +173,58 @@ func GetUserByLinuxDoID(id string) (model.User, bool, error) {
 		return model.User{}, false, err
 	}
 	return findUser(db, "linux_do_id = ?", id)
+}
+
+// ProvisionLogtoUser 创建或更新 Logto 对应的本地账户。首个 Logto 账户会原子地认领管理员角色。
+func ProvisionLogtoUser(candidate model.User) (model.User, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, err
+	}
+	var result model.User
+	err = db.Transaction(func(tx *gorm.DB) error {
+		user, ok, err := findUser(tx, "logto_id = ?", *candidate.LogtoID)
+		if err != nil {
+			return err
+		}
+		if ok {
+			user.Email = firstNonEmpty(candidate.Email, user.Email)
+			user.DisplayName = firstNonEmpty(candidate.DisplayName, user.DisplayName)
+			user.AvatarURL = firstNonEmpty(candidate.AvatarURL, user.AvatarURL)
+			user.LastLoginAt = candidate.LastLoginAt
+			user.UpdatedAt = candidate.UpdatedAt
+			if err := tx.Save(&user).Error; err != nil {
+				return err
+			}
+			result = user
+			return nil
+		}
+
+		bootstrap := model.AuthBootstrap{ID: "logto-primary-admin", UserID: candidate.ID, CreatedAt: candidate.CreatedAt}
+		claim := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&bootstrap)
+		if claim.Error != nil {
+			return claim.Error
+		}
+		candidate.Role = model.UserRoleUser
+		if claim.RowsAffected == 1 {
+			candidate.Role = model.UserRoleAdmin
+		}
+		if err := tx.Create(&candidate).Error; err != nil {
+			return err
+		}
+		result = candidate
+		return nil
+	})
+	return result, err
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // findUser 查询单个用户，并将未命中转换为 ok=false。

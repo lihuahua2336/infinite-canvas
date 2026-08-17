@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,14 @@ type TokenClaims struct {
 
 type userExtra struct {
 	LinuxDo any `json:"linuxDo,omitempty"`
+}
+
+type LogtoProfile struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+	AvatarURL   string `json:"avatarUrl"`
 }
 
 func EnsureDefaultAdmin() error {
@@ -117,6 +126,37 @@ func Login(username string, password string) (model.AuthSession, error) {
 	user, err = repository.SaveUser(user)
 	if err != nil {
 		return model.AuthSession{}, err
+	}
+	return newSession(user)
+}
+
+// LoginWithLogto 将已由 Next.js 验证的 Logto 身份映射为本地账户和 JWT。
+func LoginWithLogto(profile LogtoProfile) (model.AuthSession, error) {
+	subject := strings.TrimSpace(profile.ID)
+	if subject == "" {
+		return model.AuthSession{}, safeMessageError{message: "Logto 用户信息无效"}
+	}
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(subject)))
+	logtoID := subject
+	timestamp := now()
+	user, err := repository.ProvisionLogtoUser(model.User{
+		ID:          newID("user"),
+		Username:    "eggai-" + hash[:16],
+		Email:       strings.TrimSpace(profile.Email),
+		DisplayName: firstNonEmpty(profile.DisplayName, profile.Username, "EggAI 用户"),
+		AvatarURL:   strings.TrimSpace(profile.AvatarURL),
+		AffCode:     newAffCode(),
+		LogtoID:     &logtoID,
+		Status:      model.UserStatusActive,
+		LastLoginAt: timestamp,
+		CreatedAt:   timestamp,
+		UpdatedAt:   timestamp,
+	})
+	if err != nil {
+		return model.AuthSession{}, err
+	}
+	if user.Status == model.UserStatusBan {
+		return model.AuthSession{}, safeMessageError{message: "账号已被禁用"}
 	}
 	return newSession(user)
 }
@@ -283,6 +323,9 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		}
 		if user.LinuxDoID == "" {
 			user.LinuxDoID = saved.LinuxDoID
+		}
+		if user.LogtoID == nil {
+			user.LogtoID = saved.LogtoID
 		}
 		user.LastLoginAt = saved.LastLoginAt
 	}
