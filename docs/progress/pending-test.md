@@ -18,3 +18,4 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 浏览器直连及后端任务生图完成后自动保存图片 Blob，刷新页面后工作台历史、工作流结果和画布图片仍可查看
 - 工作流创建 Agent 在 EggAI 按需登录后使用当前文本模型和 EggAI 本地渠道直接生成草稿，不再要求旧项目账号登录
 - 视频生成完成后自动保存视频 Blob，刷新页面后历史视频仍可播放
+- 本地直连时按 NewToken 文档自动转换 VEO 3.1、VEO Omni Flash、VEO Omni Flash Video Edit 和 Seedance `/v1/videos` 模型的 JSON 请求字段、时长、比例及参考素材数量

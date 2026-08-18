@@ -39,7 +39,8 @@ export function supportsVideoFrameReferences(modelName: string) {
         model.includes("skyreels-v4") ||
         model.includes("pixverse-v6") ||
         model.includes("viduq3") ||
-        model.includes("vidu-q3")
+        model.includes("vidu-q3") ||
+        model === "veo-3-1"
     );
 }
 
