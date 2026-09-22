@@ -77,8 +77,8 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if err != nil {
 		return "", err
 	}
-	if isArkAgentPlanChannel(resolved) || isSeedanceModelName(modelName) {
-		return testArkSeedanceChannelModel(resolved, modelName)
+	if adapter, ok := matchModelProtocol(modelConfigTestRules, resolved, modelName); ok {
+		return adapter.testModel(resolved, modelName)
 	}
 	return testAdminChannelModel(resolved, modelName)
 }
@@ -106,7 +106,7 @@ func DefaultSystemPrompts() model.SystemPromptSetting {
 2. 变量名使用 snake_case，label 使用中文。
 3. promptTemplate 必须使用 {{variable_name}} 引用变量。
 4. 如果用户需要"多张、系列、组图、文章配图、海报组、写真组、方案集"，mode 使用 multi_image_series；否则使用 single_image。
-5. config 只输出必要配置，apiMode 可为 responses 或 images。
+5. config 只输出必要配置，apiMode 可为 responses、images 或 chat。
 6. variables 支持 text、textarea、number、select、boolean。
 7. select 类型的 options 必须是字符串数组。
 8. 多图工作流必须输出 seriesConfig，用于先生成多条图片提示词草稿。
@@ -171,6 +171,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		if setting.ModelChannel.ModelCosts[i].Credits < 0 {
 			setting.ModelChannel.ModelCosts[i].Credits = 0
 		}
+		setting.ModelChannel.ModelCosts[i].Credits = normalizeCredits(setting.ModelChannel.ModelCosts[i].Credits)
 	}
 	if setting.ModelChannel.AllowCustomChannel == nil {
 		enabled := true
@@ -192,7 +193,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	return setting
 }
 
-func ModelCost(modelName string) (int, error) {
+func ModelCost(modelName string) (float64, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return 0, err
@@ -318,6 +319,10 @@ func HTTPClientForChannel(channel model.ModelChannel) *http.Client {
 }
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
+	return modelProtocolForChannel(channel).buildURL(channel, path)
+}
+
+func buildOpenAIModelChannelURL(channel model.ModelChannel, path string) string {
 	baseURL := normalizeModelChannelBaseURL(channel.BaseURL)
 	lowerBaseURL := strings.ToLower(baseURL)
 	if !strings.HasSuffix(lowerBaseURL, "/v1") && !strings.HasSuffix(lowerBaseURL, "/api/v3") && !strings.HasSuffix(lowerBaseURL, "/api/plan/v3") && !strings.HasSuffix(lowerBaseURL, "/api/paas/v4") {
@@ -349,13 +354,11 @@ func normalizeModelChannelBaseURL(baseURL string) string {
 }
 
 func isArkAgentPlanChannel(channel model.ModelChannel) bool {
+	if !IsArkChannel(channel) {
+		return false
+	}
 	baseURL := strings.ToLower(normalizeModelChannelBaseURL(channel.BaseURL))
 	return strings.HasSuffix(baseURL, "/api/plan/v3")
-}
-
-func isSeedanceModelName(modelName string) bool {
-	modelName = strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(modelName, "seedance") || strings.Contains(modelName, "doubao-seedance")
 }
 
 func enabledChannelModels(channels []model.ModelChannel) []string {
@@ -417,16 +420,22 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video")
+	if kind := AutoDLModelKind(modelName); kind != "unsupported" {
+		return kind == "video"
+	}
+	return name == "minimax-h3" || strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "sd2.0 720p") || strings.Contains(name, "sd2.5 720p")
 }
 
 func isImageModelName(modelName string) bool {
+	if AutoDLModelKind(modelName) != "unsupported" {
+		return false
+	}
 	name := strings.ToLower(strings.TrimSpace(modelName))
 	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image")
 }
 
 func isTextModelName(modelName string) bool {
-	return !isImageModelName(modelName) && !isVideoModelName(modelName)
+	return AutoDLModelKind(modelName) != "audio" && !isImageModelName(modelName) && !isVideoModelName(modelName)
 }
 
 func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
@@ -483,21 +492,16 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
-	if IsMiMoChannel(channel) {
-		result := MiMoModels()
-		sort.Strings(result)
-		return result, nil
-	}
-	if isKIEAdminChannel(channel) {
-		result := kieMarketModels()
-		sort.Strings(result)
-		return result, nil
-	}
+	adapter, _ := matchModelProtocol(modelDiscoveryRules, channel, "")
+	return adapter.models(channel)
+}
+
+func fetchOpenAIAdminChannelModels(channel model.ModelChannel) ([]string, error) {
 	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models"), nil)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	SetModelChannelAuthHeader(request, channel)
 	response, err := adminModelHTTPClient.Do(request)
 	if err != nil {
 		return nil, safeMessageError{message: "读取模型失败：上游接口无响应或网络不可达"}
@@ -658,12 +662,11 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	if strings.TrimSpace(modelName) == "" {
 		return "", errors.New("缺少模型名称")
 	}
-	if strings.EqualFold(strings.TrimSpace(modelName), "glm-tts") {
-		return testGLMTTSChannelModel(channel, modelName)
-	}
-	if IsMiMoTTSModelName(modelName) {
-		return testMiMoTTSChannelModel(channel, modelName)
-	}
+	adapter, _ := matchModelProtocol(modelGenerationTestRules, channel, modelName)
+	return adapter.testModel(channel, modelName)
+}
+
+func testOpenAIChannelModel(channel model.ModelChannel, modelName string) (string, error) {
 	body, _ := json.Marshal(map[string]any{
 		"model": modelName,
 		"messages": []map[string]string{{
@@ -696,6 +699,94 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	_ = json.Unmarshal(responseBody, &payload)
 	if len(payload.Choices) > 0 && strings.TrimSpace(payload.Choices[0].Message.Content) != "" {
 		return payload.Choices[0].Message.Content, nil
+	}
+	return "ok", nil
+}
+
+func fetchGeminiAdminChannelModels(channel model.ModelChannel) ([]string, error) {
+	result := []string{}
+	pageToken := ""
+	for {
+		path := "/v1beta/models"
+		if pageToken != "" {
+			path += "?pageToken=" + url.QueryEscape(pageToken)
+		}
+		request, err := http.NewRequest(http.MethodGet, BuildGeminiChannelURL(channel, path), nil)
+		if err != nil {
+			return nil, err
+		}
+		SetModelChannelAuthHeader(request, channel)
+		response, err := adminModelHTTPClient.Do(request)
+		if err != nil {
+			return nil, safeMessageError{message: "读取模型失败：上游接口无响应或网络不可达"}
+		}
+		body, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if response.StatusCode >= http.StatusBadRequest {
+			return nil, readAdminChannelError(body, response.StatusCode, "读取模型失败")
+		}
+		var payload struct {
+			Models []struct {
+				Name                       string   `json:"name"`
+				SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+			} `json:"models"`
+			NextPageToken string `json:"nextPageToken"`
+		}
+		if json.Unmarshal(body, &payload) != nil {
+			return nil, safeMessageError{message: "读取模型失败：上游响应无法解析"}
+		}
+		for _, item := range payload.Models {
+			name := strings.TrimPrefix(strings.TrimSpace(item.Name), "models/")
+			methods := strings.Join(item.SupportedGenerationMethods, ",")
+			if name != "" && !strings.Contains(strings.ToLower(name), "embed") && (strings.Contains(methods, "generateContent") || strings.Contains(methods, "predictLongRunning") || strings.HasPrefix(strings.ToLower(name), "veo-") || strings.HasPrefix(strings.ToLower(name), "imagen-")) {
+				result = append(result, name)
+			}
+		}
+		pageToken = strings.TrimSpace(payload.NextPageToken)
+		if pageToken == "" {
+			break
+		}
+	}
+	seen := map[string]bool{}
+	unique := result[:0]
+	for _, name := range result {
+		if !seen[name] {
+			seen[name] = true
+			unique = append(unique, name)
+		}
+	}
+	result = unique
+	sort.Strings(result)
+	if len(result) == 0 {
+		return nil, safeMessageError{message: "Gemini 模型列表为空"}
+	}
+	return result, nil
+}
+
+func testGeminiChannelModel(channel model.ModelChannel, modelName string) (string, error) {
+	lowerModel := strings.ToLower(strings.TrimSpace(modelName))
+	if strings.HasPrefix(lowerModel, "veo-") || strings.Contains(lowerModel, "image") || strings.Contains(lowerModel, "tts") {
+		return "模型列表与渠道配置有效；图片、视频和语音模型未执行付费生成测试。", nil
+	}
+	body := GeminiTextRequestBody(modelName, "hi")
+	body, _ = StripGeminiModelField(body, "application/json")
+	request, err := http.NewRequest(http.MethodPost, BuildGeminiChannelURL(channel, GeminiModelActionPath(modelName, "generateContent")), strings.NewReader(string(body)))
+	if err != nil {
+		return "", err
+	}
+	SetModelChannelAuthHeader(request, channel)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := adminModelHTTPClient.Do(request)
+	if err != nil {
+		return "", safeMessageError{message: "测试失败：上游接口无响应或网络不可达"}
+	}
+	defer response.Body.Close()
+	responseBody, _ := io.ReadAll(response.Body)
+	if response.StatusCode >= http.StatusBadRequest {
+		return "", readAdminChannelError(responseBody, response.StatusCode, "测试失败")
+	}
+	if text := GeminiResponseText(responseBody); text != "" {
+		return text, nil
 	}
 	return "ok", nil
 }
@@ -975,14 +1066,15 @@ func publicChannelInfos(channels []model.ModelChannel) []model.PublicModelChanne
 			continue
 		}
 		result = append(result, model.PublicModelChannelInfo{
-			ID:      channel.ID,
-			Name:    channel.Name,
-			BaseURL: channel.BaseURL,
-			Models:  append([]string{}, channel.Models...),
-			Weight:  channel.Weight,
-			Timeout: channel.Timeout,
-			Enabled: channel.Enabled,
-			Remark:  channel.Remark,
+			ID:       channel.ID,
+			Protocol: channel.Protocol,
+			Name:     channel.Name,
+			BaseURL:  channel.BaseURL,
+			Models:   append([]string{}, channel.Models...),
+			Weight:   channel.Weight,
+			Timeout:  channel.Timeout,
+			Enabled:  channel.Enabled,
+			Remark:   channel.Remark,
 		})
 	}
 	return result

@@ -1,5 +1,7 @@
+import type { ModelChannelProtocol } from "@/lib/model-channel";
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
+import type { AgentSkill, AgentSkillFile } from "@/services/api/agent-skills";
 
 export type AdminPromptCategory = {
     category: string;
@@ -73,7 +75,7 @@ export async function deleteAdminUser(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/users/${encodeURIComponent(id)}`, token);
 }
 
-export async function fetchAdminCreditLogs(token: string, query: AdminUserQuery = {}) {
+export async function fetchAdminCreditLogs(token: string, query: AdminUserQuery & { date?: string } = {}) {
     return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
 }
 
@@ -141,6 +143,22 @@ export async function deleteAdminPrompts(token: string, ids: string[]) {
     return apiPost<boolean>("/api/admin/prompts/batch-delete", { ids }, token);
 }
 
+export function fetchAdminAgentSkills(token: string) {
+    return apiGet<AgentSkill[]>("/api/admin/agent-skills", undefined, token);
+}
+
+export function saveAdminAgentSkill(token: string, skill: Partial<AgentSkill>) {
+    return apiPost<AgentSkill>("/api/admin/agent-skills", skill, token);
+}
+
+export function fetchAdminAgentSkillFiles(token: string, id: string) {
+    return apiGet<AgentSkillFile[]>(`/api/admin/agent-skills/${encodeURIComponent(id)}/files`, undefined, token);
+}
+
+export function deleteAdminAgentSkill(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/agent-skills/${encodeURIComponent(id)}`, token);
+}
+
 export type AdminAssetQuery = {
     keyword?: string;
     type?: string;
@@ -163,7 +181,7 @@ export async function deleteAdminAsset(token: string, id: string) {
 
 export type AdminModelChannel = {
     id: string;
-    protocol: "openai" | "kie" | "mimo";
+    protocol: ModelChannelProtocol;
     name: string;
     baseUrl: string;
     apiKey: string;
@@ -201,6 +219,7 @@ export type AdminModelCost = {
 
 export type AdminPublicModelChannelInfo = {
     id: string;
+    protocol: AdminModelChannel["protocol"];
     name: string;
     baseUrl: string;
     models: string[];
@@ -269,6 +288,7 @@ export type AdminPrivateSettings = {
         mode: string;
         allowUserProvider: boolean;
         allowUserGlobalProvider: boolean;
+        autoSyncAllAssets: boolean;
         providers: AdminStorageProvider[];
         roundRobinCursor: number;
         capacityCheck: {

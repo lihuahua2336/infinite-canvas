@@ -72,7 +72,7 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 		failAIChannelSelect(w, err, "AI 接口请求失败")
 		return
 	}
-	credits := 0
+	credits := 0.0
 	if userChannelID == "" {
 		credits, err = service.ModelCost(modelName)
 		if err != nil {
@@ -80,12 +80,16 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 			Fail(w, "AI 接口请求失败")
 			return
 		}
-		credits *= readAIRequestCount(body, contentType)
+		credits *= float64(readAIRequestCount(body, contentType, true))
 	}
 	upstreamPath := resolveAIProxyPath(channel, modelName, "/videos")
 	body, contentType, err = normalizeVideoCreateBody(body, contentType, modelName, channel, upstreamPath)
 	if err != nil {
 		log.Printf("AI video normalize request failed: model=%s err=%v", modelName, err)
+		if service.IsAutoDLChannel(channel) {
+			Fail(w, err.Error())
+			return
+		}
 		Fail(w, "AI 接口请求失败")
 		return
 	}
@@ -95,7 +99,7 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	service.SetModelChannelAuthHeader(request, channel)
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
@@ -222,6 +226,52 @@ func serveAIVideoTask(w http.ResponseWriter, r *http.Request, id string) bool {
 	return true
 }
 
+func serveGeminiVideoTaskContent(w http.ResponseWriter, r *http.Request, id string) bool {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		return false
+	}
+	task, found, err := service.GetUserVideoTask(user.ID, strings.TrimSpace(id))
+	if err != nil || !found {
+		return false
+	}
+	var channel model.ModelChannel
+	if strings.TrimSpace(task.UserChannelID) != "" {
+		channel, err = service.SelectUserLocalModelChannelForModel(task.UserID, task.Model, task.UserChannelID)
+	} else {
+		channel, err = service.SelectModelChannelForModel(task.Model, task.ChannelID)
+	}
+	if err != nil || !service.IsGeminiChannel(channel) {
+		return false
+	}
+	if strings.TrimSpace(task.VideoURL) == "" {
+		Fail(w, "Gemini Veo 任务完成但没有返回视频地址")
+		return true
+	}
+	request, err := http.NewRequest(http.MethodGet, task.VideoURL, nil)
+	if err != nil {
+		Fail(w, "视频内容下载失败")
+		return true
+	}
+	service.SetModelChannelAuthHeader(request, channel)
+	response, err := service.HTTPClientForChannel(channel).Do(request)
+	if err != nil {
+		Fail(w, "视频内容下载失败")
+		return true
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= http.StatusBadRequest {
+		Fail(w, readUpstreamAIErrorMessage(nil, response.StatusCode))
+		return true
+	}
+	if contentType := response.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.WriteHeader(response.StatusCode)
+	_, _ = io.Copy(w, response.Body)
+	return true
+}
+
 func pollVideoTaskFromUpstream(task model.VideoTask) (service.VideoTaskPollUpdate, error) {
 	var channel model.ModelChannel
 	var err error
@@ -234,7 +284,7 @@ func pollVideoTaskFromUpstream(task model.VideoTask) (service.VideoTaskPollUpdat
 		return service.VideoTaskPollUpdate{}, err
 	}
 	pollID := firstNonEmpty(task.UpstreamTaskID, task.ID)
-	if isAgnesVideoModel(task.Model) && strings.HasPrefix(task.UpstreamVideoID, "video_") {
+	if isAIProtocolVideoID(task.Model, task.UpstreamVideoID) {
 		pollID = task.UpstreamVideoID
 	}
 	if strings.TrimSpace(pollID) == "" {
@@ -246,7 +296,7 @@ func pollVideoTaskFromUpstream(task model.VideoTask) (service.VideoTaskPollUpdat
 	if err != nil {
 		return service.VideoTaskPollUpdate{}, err
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	service.SetModelChannelAuthHeader(request, channel)
 	startedAt := time.Now()
 	logContext := aiLogContext{
 		StartedAt:       startedAt,
@@ -273,6 +323,9 @@ func pollVideoTaskFromUpstream(task model.VideoTask) (service.VideoTaskPollUpdat
 	}
 	transformed := transformVideoStatusPayload(payload, request, channel, task.Model)
 	parsed := parseVideoTaskPayload(transformed, task.Model)
+	if service.IsArkChannel(channel) && parsed.Status == "expired" {
+		parsed.Status = "failed"
+	}
 	if parsed.Status == "failed" && parsed.Error == "" {
 		parsed.Error = firstNonEmpty(parsed.ErrorDetail, "视频任务生成失败")
 	}
@@ -299,13 +352,11 @@ func pollVideoTaskFromUpstream(task model.VideoTask) (service.VideoTaskPollUpdat
 }
 
 func normalizeVideoCreateBody(body []byte, contentType string, modelName string, channel model.ModelChannel, upstreamPath string) ([]byte, string, error) {
-	if isKIEChannel(channel, modelName) && upstreamPath == "/jobs/createTask" {
-		return normalizeKIEVideoBody(body, contentType, modelName, channel)
-	}
-	if isAPIMartChannel(channel, modelName) && upstreamPath == "/videos/generations" {
-		return normalizeAPIMartVideoBody(body, contentType, modelName, channel)
-	}
-	return body, contentType, nil
+	prepared, _, err := prepareAIProtocolRequest(aiProtocolRequest{
+		mode: aiProtocolVideoRequest, body: body, contentType: contentType, modelName: modelName,
+		channel: channel, endpoint: "/videos", path: upstreamPath,
+	})
+	return prepared.body, prepared.contentType, err
 }
 
 func doAIRequest(request *http.Request, channel model.ModelChannel) ([]byte, int, error) {
@@ -319,45 +370,50 @@ func doAIRequest(request *http.Request, channel model.ModelChannel) ([]byte, int
 }
 
 func transformVideoCreatePayload(payload []byte, request *http.Request, channel model.ModelChannel, modelName string) []byte {
-	if isKIEChannel(channel, modelName) && strings.Contains(request.URL.Path, "/jobs/createTask") {
-		if transformed, ok := transformKIECreateVideoResponse(payload, modelName); ok {
-			return transformed
-		}
-	}
-	if isAPIMartChannel(channel, modelName) && strings.Contains(request.URL.Path, "/videos/generations") {
-		if transformed, ok := transformAPIMartCreateVideoResponse(payload, modelName); ok {
-			return transformed
-		}
-	}
-	return payload
+	return transformAIProtocolVideoPayload(payload, request, channel, modelName, false)
 }
 
 func transformVideoStatusPayload(payload []byte, request *http.Request, channel model.ModelChannel, modelName string) []byte {
-	if isKIEChannel(channel, modelName) && strings.Contains(request.URL.Path, "/jobs/recordInfo") {
-		if transformed, ok := transformKIETaskResponse(payload, modelName); ok {
-			return transformed
-		}
+	return transformAIProtocolVideoPayload(payload, request, channel, modelName, true)
+}
+
+func transformGeminiVideoTaskResponse(payload []byte) ([]byte, bool) {
+	var root map[string]any
+	if len(payload) == 0 || json.Unmarshal(payload, &root) != nil {
+		return nil, false
 	}
-	if isAPIMartChannel(channel, modelName) && strings.Contains(request.URL.Path, "/tasks/") {
-		if transformed, ok := transformAPIMartTaskResponse(payload, modelName); ok {
-			return transformed
-		}
+	name := readStringPath(root, "name")
+	done, _ := root["done"].(bool)
+	videoURL := findFirstHTTPURL(root)
+	errorMessage := firstNonEmpty(readStringPath(root, "error.message"))
+	status := "processing"
+	progress := 0
+	if errorMessage != "" {
+		status = "failed"
+	} else if done && videoURL != "" {
+		status = "completed"
+		progress = 100
+	} else if done {
+		status = "failed"
+		errorMessage = "Gemini Veo 任务完成但没有返回视频地址"
 	}
-	return payload
+	transformed, err := json.Marshal(map[string]any{
+		"id":        name,
+		"task_id":   name,
+		"status":    status,
+		"progress":  progress,
+		"video_url": videoURL,
+		"error":     map[string]any{"message": errorMessage},
+	})
+	return transformed, err == nil
 }
 
 func readVideoCreateErrorMessage(raw []byte, transformed []byte, channel model.ModelChannel, modelName string) string {
-	if isKIEChannel(channel, modelName) {
-		return firstNonEmpty(readKIECreateTaskErrorMessage(raw), readProviderPayloadError(raw), readNormalizedVideoError(transformed))
-	}
-	return firstNonEmpty(readProviderPayloadError(raw), readNormalizedVideoError(transformed))
+	return firstNonEmpty(readAIProtocolVideoError(raw, channel, modelName, false), readProviderPayloadError(raw), readNormalizedVideoError(transformed))
 }
 
 func readVideoStatusErrorMessage(raw []byte, transformed []byte, channel model.ModelChannel, modelName string) string {
-	if isKIEChannel(channel, modelName) {
-		return firstNonEmpty(readKIERecordInfoErrorMessage(raw), readProviderPayloadError(raw), readNormalizedVideoError(transformed))
-	}
-	return firstNonEmpty(readProviderPayloadError(raw), readNormalizedVideoError(transformed))
+	return firstNonEmpty(readAIProtocolVideoError(raw, channel, modelName, true), readProviderPayloadError(raw), readNormalizedVideoError(transformed))
 }
 
 type parsedVideoTaskPayload struct {
@@ -385,7 +441,7 @@ func parseVideoTaskPayload(payload []byte, modelName string) parsedVideoTaskPayl
 		Progress:        readIntPath(data, "progress"),
 		Seconds:         firstNonEmpty(readStringPath(data, "seconds"), readStringPath(data, "duration")),
 		Size:            firstNonEmpty(readStringPath(data, "size"), readSizeFromDimensions(data)),
-		VideoURL:        firstNonEmpty(readStringPath(data, "video_url"), readStringPath(data, "url"), readStringPath(data, "remixed_from_video_id"), readStringPath(data, "output_url"), readStringPath(data, "download_url"), findFirstHTTPURL(data)),
+		VideoURL:        firstNonEmpty(readStringPath(data, "video_url"), readStringPath(data, "url"), readStringPath(data, "video.url"), readStringPath(data, "remixed_from_video_id"), readStringPath(data, "output_url"), readStringPath(data, "download_url"), readStringPath(data, "content.video_url"), findFirstHTTPURL(data)),
 		Error:           firstNonEmpty(readStringPath(data, "error.message"), readStringPath(data, "error")),
 		ErrorDetail:     "",
 	}
@@ -402,7 +458,7 @@ func parseVideoTaskPayload(payload []byte, modelName string) parsedVideoTaskPayl
 	if result.Status == "failed" && result.Error == "" {
 		result.Error = firstNonEmpty(readStringPath(data, "message"), readStringPath(data, "msg"), "视频任务生成失败")
 	}
-	if result.UpstreamVideoID == "" && isAgnesVideoModel(modelName) && strings.HasPrefix(result.VideoURL, "video_") {
+	if result.UpstreamVideoID == "" && isAIProtocolVideoID(modelName, result.VideoURL) {
 		result.UpstreamVideoID = result.VideoURL
 	}
 	if result.Error != "" {
@@ -529,7 +585,7 @@ func findFirstHTTPURL(value any) string {
 			}
 		}
 	case map[string]any:
-		for _, key := range []string{"url", "video_url", "videoUrl", "download_url", "downloadUrl", "output_url", "outputUrl", "resultUrls", "result_urls", "videoUrls", "video_urls", "urls", "videos", "video_result", "video", "data", "result", "metadata"} {
+		for _, key := range []string{"uri", "url", "video_url", "videoUrl", "download_url", "downloadUrl", "output_url", "outputUrl", "resultUrls", "result_urls", "videoUrls", "video_urls", "urls", "videos", "video_result", "video", "generatedSamples", "generateVideoResponse", "response", "data", "result", "metadata"} {
 			if url := findFirstHTTPURL(typed[key]); url != "" {
 				return url
 			}
@@ -538,8 +594,8 @@ func findFirstHTTPURL(value any) string {
 	return ""
 }
 
-func refundVideoCredits(userID string, modelName string, credits int, endpoint string) {
+func refundVideoCredits(userID string, modelName string, credits float64, endpoint string) {
 	if err := service.RefundUserCredits(userID, modelName, credits, endpoint); err != nil {
-		log.Printf("AI video refund credits failed: user=%s model=%s credits=%d err=%v", userID, modelName, credits, err)
+		log.Printf("AI video refund credits failed: user=%s model=%s credits=%g err=%v", userID, modelName, credits, err)
 	}
 }

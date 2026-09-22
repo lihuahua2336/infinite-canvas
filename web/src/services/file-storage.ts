@@ -3,8 +3,9 @@
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 
+import { deleteAnonymousStorageFile, uploadAnonymousStorageFile } from "@/services/anonymous-storage";
 import { apiGet } from "@/services/api/request";
-import { canUseGlobalStorage, getProxyUrl, loadUserStorageProvider, toProviderPayload, type StorageConfig } from "@/services/image-storage";
+import { autoSyncToCloud, canUseGlobalStorage, clearAutoSyncCache, getProxyUrl, loadUserStorageProvider, toProviderPayload, type StorageConfig, type UserWebDAVStorageProvider } from "@/services/image-storage";
 import { useUserStore } from "@/stores/use-user-store";
 
 export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
@@ -13,8 +14,17 @@ const store = localforage.createInstance({ name: "infinite-canvas", storeName: "
 const objectUrls = new Map<string, string>();
 let storageConfigPromise: Promise<StorageConfig> | null = null;
 
-export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
+export async function uploadMediaFile(input: string | Blob, prefix = "file", syncId?: string): Promise<UploadedFile> {
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    const uploaded = await autoSyncToCloud(syncId || blob, async () => {
+        const metadataUrl = blob.type.startsWith("video/") ? URL.createObjectURL(blob) : undefined;
+        try {
+            return await uploadMediaBlobToServer(blob, input instanceof File ? input.name : prefix, metadataUrl);
+        } finally {
+            if (metadataUrl) URL.revokeObjectURL(metadataUrl);
+        }
+    });
+    if (uploaded) return uploaded;
     const storageKey = `${prefix}:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
@@ -55,20 +65,42 @@ export async function uploadRemoteMediaToServer(url: string, filename: string): 
     return uploadMediaBlobToServer(blob, filename);
 }
 
-async function uploadMediaBlobToServer(blob: Blob, filename: string): Promise<UploadedFile> {
+async function uploadMediaBlobToServer(blob: Blob, filename: string, metadataUrl?: string): Promise<UploadedFile> {
     const config = await loadStorageConfig().catch(() => null);
     const userProvider = config?.allowUserProvider ? loadUserStorageProvider() : null;
     if (!config || (!canUseGlobalStorage(config) && !userProvider)) throw new Error("服务端对象存储未启用");
     const token = useUserStore.getState().token;
-    if (!token) throw new Error("请先登录后再同步媒体");
+    if (userProvider?.type === "webdav") {
+        const directUpload = await uploadWebDAVMediaDirect(blob, filename, userProvider);
+        if (directUpload) return directUpload;
+    }
+    if (!token) {
+        if (!userProvider) throw new Error("请先登录后再同步媒体");
+        const uploaded = await uploadAnonymousStorageFile<UploadedFile>(blob, filename, toProviderPayload(userProvider));
+        return cacheAnonymousMedia(uploaded, blob);
+    }
     const formData = new FormData();
     formData.append("file", blob, filename);
     if (userProvider) formData.append("provider", JSON.stringify(toProviderPayload(userProvider)));
     const response = await fetch("/api/v1/files", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
     const payload = (await response.json().catch(() => null)) as { code?: number; msg?: string; data?: UploadedFile } | null;
     if (!response.ok || payload?.code !== 0 || !payload.data) throw new Error(payload?.msg || "媒体同步失败");
-    const meta = payload.data.mimeType?.startsWith("video/") ? await readVideoMeta(payload.data.url) : {};
+    const meta = metadataUrl || payload.data.mimeType?.startsWith("video/") ? await readVideoMeta(metadataUrl || payload.data.url) : {};
     return { ...payload.data, bytes: payload.data.bytes || blob.size, mimeType: payload.data.mimeType || blob.type || "application/octet-stream", ...meta };
+}
+
+async function uploadWebDAVMediaDirect(blob: Blob, filename: string, provider: UserWebDAVStorageProvider): Promise<UploadedFile | null> {
+    const direct = await import("@/services/webdav-direct-storage");
+    const uploaded = await direct.persistDirectWebDAV(provider, blob, filename);
+    return uploaded ? cacheAnonymousMedia(uploaded, blob) : null;
+}
+
+async function cacheAnonymousMedia(uploaded: UploadedFile, blob: Blob) {
+    await store.setItem(uploaded.storageKey, blob);
+    const url = URL.createObjectURL(blob);
+    objectUrls.set(uploaded.storageKey, url);
+    const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : {};
+    return { ...uploaded, url, bytes: uploaded.bytes || blob.size, mimeType: uploaded.mimeType || blob.type || "application/octet-stream", ...meta };
 }
 
 async function loadStorageConfig() {
@@ -94,12 +126,28 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
         objectUrls.set(storageKey, url);
         return url;
     }
+    if (storageKey.startsWith("server:webdav:")) {
+        const provider = loadUserStorageProvider();
+        if (provider?.type !== "webdav") return fallback;
+        const direct = await import("@/services/webdav-direct-storage");
+        return direct.directWebDAVMediaUrl(provider, direct.directWebDAVObjectKey(storageKey));
+    }
     if (storageKey.startsWith("server:")) {
         const id = storageKey.slice("server:".length);
-        if (fallback && !fallback.startsWith("blob:")) return fallback;
-        const info = await apiGet<{ publicUrl?: string }>(`/api/files/${encodeURIComponent(id)}`).catch(() => null);
+        if (fallback && !fallback.startsWith("blob:") && !fallback.includes("direct=1") && !fallback.startsWith("/webdav-media/")) return fallback;
+        const { getStorageObjectInfo } = await import("@/services/api/storage");
+        const info = await getStorageObjectInfo(id).catch(() => null);
         if (!info) return fallback;
-        const url = info?.publicUrl || `/api/files/${encodeURIComponent(id)}/content`;
+        const provider = loadUserStorageProvider();
+        if (info.direct && provider?.type === "webdav") {
+            const direct = await import("@/services/webdav-direct-storage");
+            try {
+                return await direct.directWebDAVMediaUrl(provider, info.objectKey);
+            } catch (error) {
+                if (!useUserStore.getState().token || !direct.isWebDAVDirectUnavailable(error)) throw error;
+            }
+        }
+        const url = info.publicUrl || `/api/files/${encodeURIComponent(id)}/content`;
         return url;
     }
     return fallback;
@@ -120,8 +168,29 @@ async function deleteServerMedia(storageKey: string) {
     const id = storageKey.slice("server:".length);
     if (!id) return;
     const token = useUserStore.getState().token;
-    if (!token) return;
     const provider = loadUserStorageProvider();
+    if (storageKey.startsWith("server:webdav:") && provider?.type !== "webdav") return;
+    if (provider?.type === "webdav") {
+        const direct = await import("@/services/webdav-direct-storage");
+        if (await direct.deletePersistedDirectWebDAV(provider, storageKey)) {
+            clearAutoSyncCache(storageKey);
+            const url = objectUrls.get(storageKey);
+            if (url) URL.revokeObjectURL(url);
+            objectUrls.delete(storageKey);
+            await store.removeItem(storageKey);
+            return;
+        }
+    }
+    if (!token) {
+        if (!provider) return;
+        await deleteAnonymousStorageFile(id, toProviderPayload(provider));
+        clearAutoSyncCache(storageKey);
+        const url = objectUrls.get(storageKey);
+        if (url) URL.revokeObjectURL(url);
+        objectUrls.delete(storageKey);
+        await store.removeItem(storageKey);
+        return;
+    }
     const response = await fetch(`/api/v1/files/${encodeURIComponent(id)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -129,6 +198,7 @@ async function deleteServerMedia(storageKey: string) {
     });
     const payload = (await response.json().catch(() => null)) as { code?: number; msg?: string } | null;
     if (!response.ok || payload?.code !== 0) throw new Error(payload?.msg || "删除服务端视频失败");
+    clearAutoSyncCache(storageKey);
 }
 
 export async function deleteStoredMedia(keys: Iterable<string>) {
@@ -149,6 +219,7 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
             if (url) URL.revokeObjectURL(url);
             objectUrls.delete(key);
             await store.removeItem(key);
+            clearAutoSyncCache(key);
         }),
     );
 }

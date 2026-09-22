@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,6 +22,10 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+func normalizeCredits(value float64) float64 {
+	return math.Round(value*100) / 100
+}
 
 type TokenClaims struct {
 	UserID   string         `json:"userId"`
@@ -345,7 +350,8 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	return user, err
 }
 
-func AdjustUserCredits(id string, credits int) (model.User, error) {
+func AdjustUserCredits(id string, credits float64) (model.User, error) {
+	credits = normalizeCredits(credits)
 	user, ok, err := repository.GetUserByID(id)
 	if err != nil || !ok {
 		if err != nil {
@@ -372,7 +378,8 @@ func AdjustUserCredits(id string, credits int) (model.User, error) {
 	return user, err
 }
 
-func ConsumeUserCredits(userID string, modelName string, credits int, path string) error {
+func ConsumeUserCredits(userID string, modelName string, credits float64, path string) error {
+	credits = normalizeCredits(credits)
 	if credits <= 0 {
 		return nil
 	}
@@ -397,7 +404,8 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 	return err
 }
 
-func RefundUserCredits(userID string, modelName string, credits int, path string) error {
+func RefundUserCredits(userID string, modelName string, credits float64, path string) error {
+	credits = normalizeCredits(credits)
 	if credits <= 0 {
 		return nil
 	}
@@ -431,6 +439,8 @@ func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
 }
 
 func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
+	log.Amount = normalizeCredits(log.Amount)
+	log.Balance = normalizeCredits(log.Balance)
 	if log.ID == "" {
 		log.ID = newID("credit")
 		log.CreatedAt = now()

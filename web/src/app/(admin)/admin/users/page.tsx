@@ -94,7 +94,6 @@ export default function AdminUsersPage() {
             title: "操作",
             key: "actions",
             width: 96,
-            align: "right",
             render: (_, item) => (
                 <Space size={4}>
                     <Tooltip title="编辑">
@@ -223,7 +222,7 @@ export default function AdminUsersPage() {
                                     <Form.Item label="算力点">
                                         <Space.Compact style={{ width: "100%" }}>
                                             <Form.Item name="credits" noStyle>
-                                                <InputNumber min={0} precision={0} style={{ width: "100%" }} />
+                                                <InputNumber min={0} step={0.01} precision={2} style={{ width: "100%" }} />
                                             </Form.Item>
                                             <Button onClick={() => void saveCredits()}>调整</Button>
                                         </Space.Compact>

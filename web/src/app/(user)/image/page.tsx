@@ -492,7 +492,7 @@ export default function ImagePage() {
 
                 let durableImage = image;
                 try {
-                    const stored = await uploadImage(image.dataUrl, { localOnly: true });
+                    const stored = image.storageKey ? { ...image, url: image.dataUrl } : await uploadImage(image.dataUrl, { localOnly: true });
                     durableImage = { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
                 } catch {
                     message.warning("图片已生成，但本地保存失败，请及时下载");
@@ -743,7 +743,25 @@ export default function ImagePage() {
         });
     };
 
+    const persistLoggedOutLogImages = async (log: GenerationLog): Promise<GenerationLog> => {
+        const images = log.images || [];
+        if (!images.some((image) => !image.storageKey && image.dataUrl?.startsWith("data:image/"))) return log;
+        const persistedImages = await Promise.all(
+            images.map(async (image) => {
+                if (image.storageKey || !image.dataUrl?.startsWith("data:image/")) return image;
+                try {
+                    const stored = await uploadImage(image.dataUrl, { localOnly: true });
+                    return { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width || image.width, height: stored.height || image.height, bytes: stored.bytes || image.bytes, mimeType: stored.mimeType || image.mimeType };
+                } catch {
+                    return image;
+                }
+            }),
+        );
+        return { ...log, images: persistedImages };
+    };
+
     const saveLog = async (log: GenerationLog) => {
+        const persistedLog = token ? log : await persistLoggedOutLogImages(log);
         const prevChain = saveLogChainRef.current;
         const nextChain = (async () => {
             try {
@@ -754,10 +772,10 @@ export default function ImagePage() {
             const storedLogs = await readStoredLogs();
             const keys = new Set(imageLogIdentityKeys(log));
             const duplicateLogs = storedLogs.filter((item) => item.id !== log.id && imageLogIdentityKeys(item).some((key) => keys.has(key)));
-            const nextLogs = dedupeGenerationLogs([log, ...storedLogs.filter((item) => item.id !== log.id)]);
+            const nextLogs = dedupeGenerationLogs([persistedLog, ...storedLogs.filter((item) => item.id !== log.id)]);
             setLogs(nextLogs);
             await Promise.all(duplicateLogs.map((item) => logStore.removeItem(item.id)));
-            await logStore.setItem(log.id, serializeLog(log));
+            await logStore.setItem(log.id, serializeLog(persistedLog));
             await persistImageHistory(nextLogs, categories);
         })();
         saveLogChainRef.current = nextChain;
@@ -972,8 +990,8 @@ export default function ImagePage() {
             const result = snapshot.references.length ? await requestEdit(snapshot.requestConfig, snapshot.text, snapshot.references) : await requestGeneration(snapshot.requestConfig, snapshot.text);
             const image = result[0];
             if (!image) throw new Error("接口没有返回图片");
-            const meta = await readImageMeta(image.dataUrl);
-            const nextImage: GeneratedImage = { id: image.id, dataUrl: image.dataUrl, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl), mimeType: meta.mimeType };
+            const meta = image.width && image.height && image.mimeType ? { width: image.width, height: image.height, mimeType: image.mimeType } : await readImageMeta(image.dataUrl);
+            const nextImage: GeneratedImage = { ...image, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: image.bytes || getDataUrlByteSize(image.dataUrl), mimeType: image.mimeType || meta.mimeType };
             setResults((value) => updateResult(value, resultId, { status: "success", image: nextImage, durationMs: nextImage.durationMs }));
             return nextImage;
         } catch (error) {
@@ -1376,10 +1394,11 @@ function WorkbenchPanel({
                                         size="small"
                                         className="canvas-config-mode !rounded-md !p-0.5 w-full"
                                         value={config.apiMode}
-                                        onChange={(value) => updateConfig("apiMode", value as "images" | "responses")}
+                                        onChange={(value) => updateConfig("apiMode", value as "images" | "responses" | "chat")}
                                         options={[
                                             { value: "images", label: "images" },
                                             { value: "responses", label: "responses" },
+                                            { value: "chat", label: "chat" },
                                         ]}
                                     />
                                 </div>
@@ -1550,7 +1569,7 @@ function settingsSummary(config: AiConfig, model: string) {
         imageSizeLabel(config.size || "auto"),
         imageQualityLabel(config.quality || "auto"),
         `${config.count || "1"} 张`,
-        config.streamImages ? `流式 ${config.streamPartialImages || "1"}` : "非流式",
+        config.apiMode !== "chat" && config.streamImages ? `流式 ${config.streamPartialImages || "1"}` : "非流式",
     ].join(" · ");
 }
 
@@ -1831,10 +1850,11 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
                             size="small"
                             className="canvas-config-mode !rounded-md !p-0.5"
                             value={config.apiMode}
-                            onChange={(value) => updateConfig("apiMode", value as "images" | "responses")}
+                            onChange={(value) => updateConfig("apiMode", value as "images" | "responses" | "chat")}
                             options={[
                                 { value: "images", label: "images" },
                                 { value: "responses", label: "responses" },
+                                { value: "chat", label: "chat" },
                             ]}
                         />
                     </div>
@@ -1971,10 +1991,10 @@ function TaskInfo({ result, error, onCopyPrompt }: { result: GenerationResult; e
                 ) : null}
                 <Tag className="m-0">{formatLogTime(result.createdAt)}</Tag>
                 <Tag className="m-0">{result.model}</Tag>
-                <Tag className="m-0">{result.config.apiMode === "responses" ? "Responses" : "Images"}</Tag>
+                <Tag className="m-0">{result.config.apiMode === "chat" ? "Chat" : result.config.apiMode === "responses" ? "Responses" : "Images"}</Tag>
                 <Tag className="m-0">{result.config.size || "auto"}</Tag>
                 <Tag className="m-0">{result.config.quality || "auto"}</Tag>
-                {result.config.streamImages ? <Tag className="m-0">流式 {result.config.streamPartialImages || "1"}</Tag> : null}
+                {result.config.apiMode !== "chat" && result.config.streamImages ? <Tag className="m-0">流式 {result.config.streamPartialImages || "1"}</Tag> : null}
                 {result.durationMs ? <Tag className="m-0">{formatDuration(result.durationMs)}</Tag> : null}
             </div>
             {error ? <div className="rounded-md bg-red-100 px-2 py-1.5 text-red-600 dark:bg-red-950/40 dark:text-red-300">{error}</div> : null}
@@ -2108,10 +2128,10 @@ function HistoryLogCard({
                     ) : null}
                     <Tag className="m-0 text-[10px]">{formatLogTime(log.createdAt)}</Tag>
                     <Tag className="m-0 text-[10px]">{log.model}</Tag>
-                    <Tag className="m-0 text-[10px]">{log.config.apiMode === "responses" ? "Responses" : "Images"}</Tag>
+                    <Tag className="m-0 text-[10px]">{log.config.apiMode === "chat" ? "Chat" : log.config.apiMode === "responses" ? "Responses" : "Images"}</Tag>
                     <Tag className="m-0 text-[10px]">{log.config.size || "auto"}</Tag>
                     <Tag className="m-0 text-[10px]">{log.config.quality || "auto"}</Tag>
-                    {log.config.streamImages ? <Tag className="m-0 text-[10px]">流式 {log.config.streamPartialImages || "1"}</Tag> : null}
+                    {log.config.apiMode !== "chat" && log.config.streamImages ? <Tag className="m-0 text-[10px]">流式 {log.config.streamPartialImages || "1"}</Tag> : null}
                     <Tag className="m-0 text-[10px]">{formatDuration(log.durationMs)}</Tag>
                 </div>
                 {log.errors[0] ? (
@@ -2444,6 +2464,7 @@ function imageLogsFromTask(log: GenerationLog, task: CanvasImageTask): Generatio
     const parentTaskId = task.parent_task_id || task.id;
 
     return urls.map((url, index) => {
+        const stored = task.imageStorage?.find((image) => image?.url === url);
         const nextLog = imageLogFromTask(
             {
                 ...log,
@@ -2455,8 +2476,9 @@ function imageLogsFromTask(log: GenerationLog, task: CanvasImageTask): Generatio
                 parent_task_id: parentTaskId,
                 url,
                 image_url: url,
-                storageKey: undefined,
-                bytes: 0,
+                storageKey: stored?.storageKey,
+                bytes: stored?.bytes || 0,
+                mimeType: stored?.mimeType || task.mimeType,
             },
         );
 
@@ -2482,7 +2504,8 @@ function imageLogFromTask(log: GenerationLog, task: CanvasImageTask): Generation
         if (!url) {
             return { ...log, task, status: "失败", durationMs, failCount: 1, errors: ["图片生成完成但没有返回图片地址"], errorDetails: [JSON.stringify(task, null, 2)], lastPolledAt: Date.now() };
         }
-        const image: GeneratedImage = { id: task.id, dataUrl: url, storageKey: task.storageKey, durationMs, width: task.width || 0, height: task.height || 0, bytes: task.bytes || 0, mimeType: task.mimeType || "image/png" };
+        const stored = task.imageStorage?.find((image) => image?.url === url);
+        const image: GeneratedImage = { id: task.id, dataUrl: url, storageKey: task.storageKey, durationMs, width: stored?.width || task.width || 0, height: stored?.height || task.height || 0, bytes: task.bytes || 0, mimeType: task.mimeType || "image/png" };
         return { ...log, task, status: "成功", durationMs, successCount: 1, failCount: 0, imageCount: 1, images: [image], thumbnails: [url], errors: [], errorDetails: [], lastPolledAt: Date.now() };
     }
     return { ...log, task, durationMs, lastPolledAt: Date.now() };
@@ -2643,6 +2666,22 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         }),
     );
     const visibleImages = images.filter((image) => Boolean(image.dataUrl));
+    if (!visibleImages.length && log.status === "成功") {
+        const taskImageUrl = log.task?.image_url || log.task?.url || "";
+        const dataUrl = await resolveImageUrl(log.task?.storageKey, taskImageUrl);
+        if (dataUrl) {
+            visibleImages.push({
+                id: log.task?.id || log.id || nanoid(),
+                dataUrl,
+                storageKey: log.task?.storageKey,
+                durationMs: log.durationMs || 0,
+                width: log.task?.width || 0,
+                height: log.task?.height || 0,
+                bytes: log.task?.bytes || 0,
+                mimeType: log.task?.mimeType || "image/png",
+            });
+        }
+    }
     const config = normalizeLogConfig(log);
     return {
         id: log.id || nanoid(),

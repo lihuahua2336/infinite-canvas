@@ -6,14 +6,53 @@
 
 <p align="center">
   <a href="https://github.com/tigerowo/infinite-canvas"><img src="https://img.shields.io/github/stars/tigerowo/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.5.7-2563eb?style=flat-square" alt="Version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f97316?style=flat-square" alt="License"></a>
+  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.7.1-2563eb?style=flat-square" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-f97316?style=flat-square" alt="License"></a>
   <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-ready-2496ed?style=flat-square&logo=docker&logoColor=white" alt="Docker ready"></a>
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16.2-000000?style=flat-square&logo=nextdotjs" alt="Next.js"></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25-00add8?style=flat-square&logo=go&logoColor=white" alt="Go"></a>
 </p>
 
+<p align="center">
+  <a href="#联系方式"><img src="https://img.shields.io/badge/微信交流群已开放-扫码加入-07C160?style=flat-square&logo=wechat&logoColor=white" alt="微信群"></a>
+</p>
+
+<p align="center">
+  <strong>Windows 本地安装包现已同步更新</strong><br>
+  <sub>无需从源码构建，下载即可本地运行</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/tigerowo/infinite-canvas/releases/latest">
+    <img
+      src="https://img.shields.io/github/v/release/tigerowo/infinite-canvas?style=for-the-badge&logo=windows11&logoColor=white&label=Windows%20EXE&color=2563eb"
+      alt="下载 Windows EXE"
+    >
+  </a>
+</p>
+
 无限画布是一款面向图片，视频，音频，全能创作的开源工作台。它把画布编排、AI 图片、视频、音频生成、参考图编辑、对话助手、提示词库和素材沉淀放在同一个界面里，适合用来探索视觉方案并连续迭代图片结果
+
+## 赞助商
+
+<table>
+  <tr>
+    <td width="190" align="center">
+      <a href="https://88api.ai/sign-up?aff=25ty" target="_blank" rel="noopener"><img src="assets/88.webp" width="128" alt="88API"></a>
+    </td>
+    <td>
+      <strong>88API｜无限画布</strong> 让各大主流模型能力结合得更紧密。 🎨 支持 <strong>GPT-Image、Gemini、Grok</strong> 等图片模型；🎬 支持 <strong>Seedance、Wan、H3、Kling、Grok</strong> 等视频模型；🎙️ 支持 <strong>Whisper、TTS</strong> 等语音能力。从文案、出图、改图，到视频生成与配音，一张画布串联完整创作链路。不只是模型聚合，更让不同模型在同一工作流中真正协同。 🎁 通过 <a href="https://88api.ai/sign-up?aff=25ty">无限画布专属链接注册</a>，即可领取赠送额度及专属优惠。
+    </td>
+  </tr>
+  <tr>
+    <td width="190" align="center">
+      <a href="https://metaso.cn/minimax-h3/?s=tt" target="_blank" rel="noopener"><img src="assets/metaso.png" width="163" alt="秘塔科技"></a>
+    </td>
+    <td>
+      <strong>MiniMax H3 视频生成 API｜秘塔科技</strong> 秘塔科技提供高性价比的 MiniMax H3 视频生成服务：<strong>768P 仅 0.09 元/秒，2K 仅 0.15 元/秒</strong>。支持原生 2K、音画同步，API 兼容 <strong>OpenAI 协议</strong>，同时支持 <strong>ComfyUI</strong>，无需自行部署 GPU。 🎁 通过 <a href="https://metaso.cn/minimax-h3/?s=tt" target="_blank" rel="noopener noreferrer">无限画布专属链接注册</a>，即可领取赠送额度及专属优惠。
+    </td>
+  </tr>
+</table>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/tigerowo/cdn-tdeh/v0.5/img/infinite-canvas/3ddirectortl.webp" alt="3D 导演台时间轴" />
@@ -37,6 +76,7 @@
 
 ## 核心功能
 
+- Agent：围绕选中节点和上游节点分析、规划并生成图片或视频，支持选择 Skill 指导当前创作任务，并将结果插回画布
 - 全景图：支持文字生成、参考图生成和本地 2:1 全景图导入，可作为导演台的场景环境背景
 - 导演台：在独立 3D 场景中布置角色、模型、全景环境和机位，支持镜头管理、截图，并将机位画面自动发送为连线图片节点
 - 摄像机控制：图片、视频和生成配置节点支持独立设置相机、镜头、焦距和光圈，将镜头参数自动写入生成提示词，并随节点保存和复制
@@ -44,7 +84,6 @@
 - AI 创作：支持 OpenAI 兼容接口的 Images API、Responses API、图生图、参考图编辑、流式接收、Base64 图片返回；Seedance 2.0 可通过火山方舟 Agent Plan 接入
 - 生图工作台：支持侧边/悬浮底部工作台、多任务并发、历史结果合并展示、分类管理、失败详情、参考图缩略图、图片体积展示和“我的素材”复用
 - 创作工作流：支持公开/个人模板、变量表单、AI 创建工作流、单图/多图系列工作流、参考图输入和结果自动进入生图历史
-- 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回画布
 - 提示词库：抓取多个 GitHub 开源项目，按案例整理数百个图片提示词
 - 提示词与素材：提示词库、服务器素材库和“我的素材”可在生图、画布 AI 和工作流中复用
 
@@ -143,9 +182,22 @@ https://infinite-canvas-cpco.onrender.com?apiKey={key}&baseUrl={address}
 - [接口响应约定](docs/backend/api-response.md)
 - [EggAI 登录与 New API 配置](docs/eggai/README.md)
 
+## 联系方式
+
+项目定制二次开发需求，广告赞助合作其他可联系
+
+邮箱：yhb293933@gmail.com
+
+微信交流测试群：
+<p align="center">
+  <img src="assets/wc.png" alt="微信群二维码" width="180">
+</p>
+
 ## 赞助支持
 
 <div align="center">
+
+本项目长期开放广告赞助合作，欢迎品牌 / 产品投放
 
 如果这个项目对你有帮助，欢迎赞助支持，你的每一份鼓励都是持续更新的动力！
 
@@ -157,7 +209,7 @@ https://infinite-canvas-cpco.onrender.com?apiKey={key}&baseUrl={address}
 
 ## 开源协议
 
-本项目使用 MIT License，见 [LICENSE](LICENSE)。
+本项目使用 GNU Affero General Public License v3.0，见 [LICENSE](LICENSE)。
 
 ## Star History
 

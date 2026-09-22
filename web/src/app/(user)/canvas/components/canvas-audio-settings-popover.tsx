@@ -6,9 +6,13 @@ import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
 import { AudioSettingsPanel, type AudioSettingKey } from "@/components/audio-settings-panel";
+import { isAutoDLConfig } from "@/lib/autodl";
 import { audioFormatLabel, audioSpeedLabel, audioVoiceLabel, glmTtsVoiceLabel, isGlmTtsModel, normalizeGlmTtsFormat, normalizeGlmTtsSpeed } from "@/lib/audio-generation";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isGrok2APITtsConfig, normalizeGrokTtsFormat, normalizeGrokTtsLanguage, normalizeGrokTtsSpeed } from "@/lib/grok-tts";
 import { isMimoPresetTtsModel, isMimoTtsModel, isMimoVoiceCloneModel, isMimoVoiceDesignModel, mimoTtsVoiceLabel, normalizeMimoTtsFormat } from "@/lib/mimo-tts";
+import { isGeminiConfig, isGeminiTtsModel } from "@/lib/gemini";
+import { normalizeGeminiTtsVoice } from "@/lib/gemini-tts";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 import { ResourceSinglePicker, type CanvasVideoResourceOption } from "./canvas-video-settings-popover";
@@ -55,7 +59,7 @@ export function CanvasAudioSettingsPopover({ config, onConfigChange, resourceOpt
     }, [open]);
 
     const audioOptions = useMemo(() => resourceOptions.filter((item) => item.kind === "audio"), [resourceOptions]);
-    const cloneAudioNodeId = validCloneAudioNodeId(metadata?.mimoVoiceCloneAudioNodeId, audioOptions);
+    const cloneAudioNodeId = validCloneAudioNodeId(isAutoDLConfig(config) ? metadata?.referenceAudioNodeId : metadata?.mimoVoiceCloneAudioNodeId, audioOptions);
     const panel = open && buttonRect ? <AudioSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} audioOptions={audioOptions} cloneAudioNodeId={cloneAudioNodeId} onMetadataChange={onMetadataChange} /> : null;
 
     return (
@@ -97,7 +101,7 @@ function AudioSettingsPortal({ buttonRect, panelRef, placement, theme, config, o
         <div ref={panelRef} className="canvas-image-settings-popover" style={style} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
             <div className="space-y-4">
                 <div className="text-lg font-semibold">音频设置</div>
-                {isMimoVoiceCloneModel(model) ? (
+                {isMimoVoiceCloneModel(model) || isAutoDLConfig(config, model) ? (
                     <ResourceSinglePicker
                         label="参考音频"
                         value={cloneAudioNodeId}
@@ -105,7 +109,7 @@ function AudioSettingsPortal({ buttonRect, panelRef, placement, theme, config, o
                         placeholder="请选择音频节点"
                         emptyText={audioOptions.length ? "请选择已连接音频" : "暂无已连接音频节点"}
                         theme={theme}
-                        onChange={(value) => onMetadataChange?.({ mimoVoiceCloneAudioNodeId: value || undefined })}
+                        onChange={(value) => onMetadataChange?.(isAutoDLConfig(config, model) ? { referenceAudioNodeId: value || undefined } : { mimoVoiceCloneAudioNodeId: value || undefined })}
                     />
                 ) : null}
                 <AudioSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={false} className="space-y-4" />
@@ -122,7 +126,9 @@ function validCloneAudioNodeId(value: string | undefined, options: CanvasVideoRe
 
 function audioSettingsSummary(config: AiConfig, cloneAudioNodeId: string, audioOptions: CanvasVideoResourceOption[]) {
     const model = config.model || config.audioModel || "";
+    if (isGeminiTtsModel(model) && isGeminiConfig(config, model)) return normalizeGeminiTtsVoice(config.geminiTtsVoice);
     if (isGlmTtsModel(model)) return `${glmTtsVoiceLabel(config.glmTtsVoice)} · ${normalizeGlmTtsFormat(config.glmTtsFormat).toUpperCase()} · ${normalizeGlmTtsSpeed(config.glmTtsSpeed)}x`;
+    if (isGrok2APITtsConfig(config, model)) return `${config.grokTtsVoice || "eve"} · ${normalizeGrokTtsLanguage(config.grokTtsLanguage)} · ${normalizeGrokTtsFormat(config.grokTtsFormat).toUpperCase()} · ${normalizeGrokTtsSpeed(config.grokTtsSpeed)}x`;
     if (!isMimoTtsModel(model)) return `${audioVoiceLabel(config.audioVoice)} · ${audioFormatLabel(config.audioFormat)} · ${audioSpeedLabel(config.audioSpeed)}`;
     const format = normalizeMimoTtsFormat(config.mimoTtsFormat).toUpperCase();
     if (isMimoPresetTtsModel(model)) return `${mimoTtsVoiceLabel(config.mimoTtsVoice)} · ${format}`;

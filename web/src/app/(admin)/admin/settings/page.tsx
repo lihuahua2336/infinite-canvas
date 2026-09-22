@@ -2,12 +2,17 @@
 
 import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { json } from "@codemirror/lang-json";
-import { App, Button, Card, Checkbox, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import { App, Button, Card, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
+import { ChannelModelSelectorModal } from "@/components/channel-model-selector-modal";
+import { useAutoDLWorkflowNames } from "@/hooks/use-autodl-workflow";
+import { modelChannelApiKeyUrls, modelChannelDefaultBaseUrls, modelChannelProtocolOptions } from "@/lib/model-channel";
 import { fetchAdminSettings, fetchChannelModels, measureAdminStorageProvider, saveAdminSettings, testChannelModel, type AdminModelChannel, type AdminModelCost, type AdminSettings, type AdminStorageProvider } from "@/services/api/admin";
+import { clearStorageConfigCache as clearMediaStorageConfigCache } from "@/services/file-storage";
+import { clearStorageConfigCache as clearImageStorageConfigCache } from "@/services/image-storage";
 import { useUserStore } from "@/stores/use-user-store";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -42,15 +47,14 @@ const emptySettings: AdminSettings = {
         auth: { allowRegister: true, linuxDo: { enabled: false } },
         storage: { mode: "local_indexeddb", allowUserProvider: false },
     },
-    private: { channels: [], promptSync: { enabled: true, cron: "0 0 * * *" }, aiLog: { localDirectReportEnabled: false, cleanup: { enabled: false, retentionDays: 14, cron: "0 3 * * *" } }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, storage: { mode: "local_indexeddb", allowUserProvider: false, allowUserGlobalProvider: true, providers: [], roundRobinCursor: 0, capacityCheck: { enabled: false, cron: "0 */6 * * *" }, capacityLimitBytes: 9 * 1024 * 1024 * 1024 } },
+    private: { channels: [], promptSync: { enabled: true, cron: "0 0 * * *" }, aiLog: { localDirectReportEnabled: false, cleanup: { enabled: false, retentionDays: 14, cron: "0 3 * * *" } }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, storage: { mode: "local_indexeddb", allowUserProvider: false, allowUserGlobalProvider: true, autoSyncAllAssets: false, providers: [], roundRobinCursor: 0, capacityCheck: { enabled: false, cron: "0 */6 * * *" }, capacityLimitBytes: 9 * 1024 * 1024 * 1024 } },
 };
-const emptyChannel: AdminModelChannel = { id: "", protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, timeout: 600, enabled: true, remark: "" };
+const emptyChannel: AdminModelChannel = { id: "", protocol: "openai", name: "", baseUrl: modelChannelDefaultBaseUrls.openai, apiKey: "", models: [], weight: 1, timeout: 600, enabled: true, remark: "" };
 const emptyS3StorageProvider: AdminStorageProvider = { id: "", name: "", type: "s3", endpoint: "", region: "auto", bucket: "", accessKeyId: "", secretAccessKey: "", publicBaseUrl: "", pathPrefix: "canvas", username: "", password: "", weight: 1, enabled: true, ownerUserId: "", capacityBytes: 0, capacityCheckedAt: "", capacityExceeded: false };
 const emptyWebDAVStorageProvider: AdminStorageProvider = { ...emptyS3StorageProvider, name: "", type: "webdav", region: "" };
 
 type SettingsTabKey = "public" | "private";
 type EditorMode = "visual" | "json";
-type ModelSelectTabKey = "new" | "current";
 
 export default function AdminSettingsPage() {
     const token = useUserStore((state) => state.token);
@@ -69,13 +73,6 @@ export default function AdminSettingsPage() {
     const [testingModels, setTestingModels] = useState<string[]>([]);
     const [testResults, setTestResults] = useState<Record<string, { status: "success" | "error"; duration?: string; message: string }>>({});
     const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
-    const [modelSelectSource, setModelSelectSource] = useState<string[]>([]);
-    const [modelSelectExisting, setModelSelectExisting] = useState<string[]>([]);
-    const [modelSelectSelected, setModelSelectSelected] = useState<string[]>([]);
-    const [modelSelectKeyword, setModelSelectKeyword] = useState("");
-    const [modelSelectNewModel, setModelSelectNewModel] = useState("");
-    const [modelSelectTab, setModelSelectTab] = useState<ModelSelectTabKey>("new");
-    const [isFetchingChannelModels, setIsFetchingChannelModels] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [measuringProviderIndex, setMeasuringProviderIndex] = useState<number | null>(null);
@@ -83,17 +80,16 @@ export default function AdminSettingsPage() {
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
     const storageProviders = Form.useWatch(["private", "storage", "providers"], form) || [];
+    const channelProtocol = Form.useWatch("protocol", channelForm);
+    const channelBaseUrl = Form.useWatch("baseUrl", channelForm);
+    const modelLabel = useAutoDLWorkflowNames([...channels, { protocol: channelProtocol, baseUrl: channelBaseUrl }]);
+    const publicModelLabel = (model: string) => modelLabel(model, channels.find((channel) => channel.protocol === "autodl" && channel.models.includes(model)));
+    const channelApiKeyUrl = channelProtocol ? modelChannelApiKeyUrls[channelProtocol] : undefined;
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
     const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index, _rowKey: `${index}-${channel.name}-${channel.baseUrl}` })), [channels]);
     const activeMode = editorMode[activeTab];
     const activeJsonText = jsonText[activeTab];
     const jsonError = activeMode === "json" ? getJsonError(activeJsonText) : "";
-    const modelSelectGroups = useMemo(() => buildModelSelectGroups(modelSelectSource, modelSelectExisting), [modelSelectSource, modelSelectExisting]);
-    const activeModelSelectModels = useMemo(() => {
-        const keyword = modelSelectKeyword.trim().toLowerCase();
-        return modelSelectGroups[modelSelectTab].filter((model) => model.toLowerCase().includes(keyword));
-    }, [modelSelectGroups, modelSelectKeyword, modelSelectTab]);
-    const activeSelectedCount = activeModelSelectModels.filter((model) => modelSelectSelected.includes(model)).length;
 
     const loadSettings = async () => {
         if (!token) return;
@@ -132,6 +128,8 @@ export default function AdminSettingsPage() {
         setIsSaving(true);
         try {
             const saved = normalizeSettings(await saveAdminSettings(token, values));
+            clearImageStorageConfigCache();
+            clearMediaStorageConfigCache();
             const merged = mergeChannelApiKeys(values.private.channels, saved);
             form.setFieldsValue(merged);
             setChannels(merged.private.channels);
@@ -218,75 +216,17 @@ export default function AdminSettingsPage() {
             message.warning("请先填写 API Key");
             return;
         }
-        setIsFetchingChannelModels(true);
-        try {
-            const channelModels = await fetchChannelModels(token, { index: editingChannelIndex ?? undefined, channel: normalizeChannel(channel) });
-            const current = isModelSelectorOpen ? uniqueModels(modelSelectSelected) : uniqueModels(channelForm.getFieldValue("models") || []);
-            rememberModels(channelModels);
-            if (!channelModels.length) {
-                message.warning("上游未返回模型列表，请手动输入模型名称");
-                return;
-            }
-            setModelSelectExisting(current);
-            setModelSelectSource(uniqueModels(channelModels));
-            setModelSelectSelected(uniqueModels([...channelModels, ...current]));
-            setModelSelectKeyword("");
-            setModelSelectNewModel("");
-            setModelSelectTab("new");
-            setIsModelSelectorOpen(true);
-            message.success(`已获取 ${channelModels.length} 个模型，请选择后确认`);
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "读取模型失败");
-        } finally {
-            setIsFetchingChannelModels(false);
-        }
+        return fetchChannelModels(token, { index: editingChannelIndex ?? undefined, channel: normalizeChannel(channel) });
     };
 
-    const openChannelModelSelector = (sourceModels?: string[]) => {
-        const current = uniqueModels(channelForm.getFieldValue("models") || []);
-        const source = uniqueModels(sourceModels !== undefined ? sourceModels : [...knownModels, ...current]);
-        setModelSelectExisting(current);
-        setModelSelectSource(source);
-        setModelSelectSelected(sourceModels ? uniqueModels([...current, ...source]) : current);
-        setModelSelectKeyword("");
-        setModelSelectNewModel("");
-        setModelSelectTab(sourceModels ? "new" : "current");
-        setIsModelSelectorOpen(true);
-    };
+    const openChannelModelSelector = () => setIsModelSelectorOpen(true);
 
-    const closeChannelModelSelector = () => {
-        setIsModelSelectorOpen(false);
-        setModelSelectKeyword("");
-        setModelSelectNewModel("");
-    };
+    const closeChannelModelSelector = () => setIsModelSelectorOpen(false);
 
-    const confirmChannelModelSelector = () => {
-        const models = uniqueModels(modelSelectSelected);
+    const confirmChannelModelSelector = (models: string[]) => {
         channelForm.setFieldValue("models", models);
         rememberModels(models);
         closeChannelModelSelector();
-    };
-
-    const toggleSelectedModel = (model: string, checked: boolean) => {
-        setModelSelectSelected((current) => (checked ? uniqueModels([...current, model]) : current.filter((item) => item !== model)));
-    };
-
-    const selectActiveModels = () => {
-        setModelSelectSelected((current) => uniqueModels([...current, ...activeModelSelectModels]));
-    };
-
-    const clearActiveModels = () => {
-        const active = new Set(activeModelSelectModels);
-        setModelSelectSelected((current) => current.filter((model) => !active.has(model)));
-    };
-
-    const addModelInSelector = () => {
-        const model = modelSelectNewModel.trim();
-        if (!model) return;
-        setModelSelectExisting((current) => uniqueModels([...current, model]));
-        setModelSelectSelected((current) => uniqueModels([...current, model]));
-        setModelSelectNewModel("");
-        setModelSelectTab("current");
     };
 
     function rememberModels(models: string[]) {
@@ -341,7 +281,7 @@ export default function AdminSettingsPage() {
     };
 
     const testChannel = testChannelIndex === null ? null : normalizeChannel(channels[testChannelIndex]);
-    const testModels = (testChannel?.models || []).filter((model) => model.toLowerCase().includes(testKeyword.trim().toLowerCase()));
+    const testModels = (testChannel?.models || []).filter((model) => `${model} ${modelLabel(model, testChannel)}`.toLowerCase().includes(testKeyword.trim().toLowerCase()));
 
     async function persistChannels(nextChannels: AdminModelChannel[]) {
         if (!token) return;
@@ -353,6 +293,8 @@ export default function AdminSettingsPage() {
             private: { ...values.private, channels: nextChannels },
         });
         const saved = normalizeSettings(await saveAdminSettings(token, nextSettings));
+        clearImageStorageConfigCache();
+        clearMediaStorageConfigCache();
         const merged = mergeChannelApiKeys(nextChannels, saved);
         setChannels(merged.private.channels);
         setModelCosts(merged.public.modelChannel.modelCosts);
@@ -440,27 +382,27 @@ export default function AdminSettingsPage() {
                                 <Row gutter={16}>
                                     <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "availableModels"]} label="系统可用模型(请先在私有配置里配置渠道)" extra="可选项来自已启用渠道中选择的模型，最终开放哪些模型由这里勾选决定">
-                                            <Select mode="multiple" placeholder="请选择系统可用模型" options={channelModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select mode="multiple" showSearch={{ optionFilterProp: ["label", "value"] }} placeholder="请选择系统可用模型" options={channelModels.map((item) => ({ label: publicModelLabel(item), value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultModel"]} label="默认模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch={{ optionFilterProp: ["label", "value"] }} allowClear options={publicModels.map((item) => ({ label: publicModelLabel(item), value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultImageModel"]} label="默认图片模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch={{ optionFilterProp: ["label", "value"] }} allowClear options={publicModels.map((item) => ({ label: publicModelLabel(item), value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultVideoModel"]} label="默认视频模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch={{ optionFilterProp: ["label", "value"] }} allowClear options={publicModels.map((item) => ({ label: publicModelLabel(item), value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultTextModel"]} label="默认文本模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch={{ optionFilterProp: ["label", "value"] }} allowClear options={publicModels.map((item) => ({ label: publicModelLabel(item), value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -514,14 +456,14 @@ export default function AdminSettingsPage() {
                                             size="small"
                                             dataSource={publicModels.map((model) => ({ model, credits: modelCostCredits(modelCosts, model) }))}
                                             columns={[
-                                                { title: "模型", dataIndex: "model" },
+                                                { title: "模型", dataIndex: "model", render: (value: string) => <span title={value}>{publicModelLabel(value)}</span> },
                                                 {
-                                                    title: "每次调用扣除",
+                                                    title: "计费单价（视频按秒）",
                                                     dataIndex: "credits",
                                                     width: 220,
                                                     render: (_, item) => (
                                                         <Space.Compact className="!w-full">
-                                                            <InputNumber min={0} step={1} precision={0} className="!w-full" value={item.credits} onChange={(value) => setModelCost(form, setModelCosts, item.model, Number(value) || 0)} />
+                                                            <InputNumber min={0} step={0.01} precision={2} className="!w-full" value={item.credits} onChange={(value) => setModelCost(form, setModelCosts, item.model, Number(value) || 0)} />
                                                             <span className="flex h-8 items-center rounded-r-md border border-l-0 border-stone-200 bg-stone-50 px-3 text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-300">
                                                                 点
                                                             </span>
@@ -589,18 +531,23 @@ export default function AdminSettingsPage() {
                                 </Card>
                                 <Card size="small" title="数据存储">
                                     <Row gutter={16}>
-                                        <Col xs={24} md={8}>
-                                            <Form.Item label="存储模式" extra="自动检测：当配置并启用任意对象存储时，系统自动开启云端同步。">
+                                        <Col xs={24} md={6}>
+                                            <Form.Item label="存储模式" extra="根据对象存储配置和启用状态自动识别。">
                                                 <Input disabled value="自动识别 (动态切换)" />
                                             </Form.Item>
                                         </Col>
-                                        <Col xs={24} md={8}>
+                                        <Col xs={24} md={6}>
                                             <Form.Item name={["private", "storage", "allowUserProvider"]} label="允许用户配置 S3/WebDAV" valuePropName="checked">
                                                 <Switch />
                                             </Form.Item>
                                         </Col>
-                                        <Col xs={24} md={8}>
+                                        <Col xs={24} md={6}>
                                             <Form.Item name={["private", "storage", "allowUserGlobalProvider"]} label="允许用户使用全局配置渠道" valuePropName="checked">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["private", "storage", "autoSyncAllAssets"]} label="全部素材云端同步" extra="上传、导入及生成的图片、视频、音频自动同步到可用云存储；关闭保持原有行为" valuePropName="checked">
                                                 <Switch />
                                             </Form.Item>
                                         </Col>
@@ -791,7 +738,6 @@ export default function AdminSettingsPage() {
                                             title: "操作",
                                             key: "actions",
                                             width: 220,
-                                            align: "right",
                                             render: (_, item) => (
                                                 <Space size={4}>
                                                     <Button size="small" onClick={() => openTestDialog(item._index)}>
@@ -856,11 +802,10 @@ export default function AdminSettingsPage() {
                             <Col span={12}>
                                 <Form.Item name="protocol" label="协议">
                                     <Select
-                                        options={[
-                                            { label: "OpenAI", value: "openai" },
-                                            { label: "KIE", value: "kie" },
-                                            { label: "MiMo", value: "mimo" },
-                                        ]}
+                                        options={modelChannelProtocolOptions}
+                                        onChange={(protocol: AdminModelChannel["protocol"]) => {
+                                            channelForm.setFieldValue("baseUrl", modelChannelDefaultBaseUrls[protocol]);
+                                        }}
                                     />
                                 </Form.Item>
                             </Col>
@@ -880,7 +825,22 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={24}>
-                                <Form.Item name="baseUrl" label="接口地址" rules={[{ required: true, message: "请输入接口地址" }]}>
+                                <Form.Item
+                                    name="baseUrl"
+                                    label={
+                                        <span className="relative inline-flex items-center">
+                                            接口地址
+                                            {channelApiKeyUrl ? (
+                                                <span className="absolute left-full top-1/2 ml-2 -translate-y-1/2 whitespace-nowrap">
+                                                    <Button type="primary" size="small" href={channelApiKeyUrl} target="_blank">
+                                                        获取 API Key
+                                                    </Button>
+                                                </span>
+                                            ) : null}
+                                        </span>
+                                    }
+                                    rules={[{ required: true, message: "请输入接口地址" }]}
+                                >
                                     <Input />
                                 </Form.Item>
                             </Col>
@@ -893,7 +853,7 @@ export default function AdminSettingsPage() {
                                 <Form.Item label="渠道可用模型">
                                     <Space.Compact style={{ width: "100%" }}>
                                         <Form.Item name="models" noStyle>
-                                            <Select mode="tags" maxTagCount="responsive" tokenSeparators={[",", "\n"]} options={knownModels.map((model) => ({ label: model, value: model }))} />
+                                            <Select mode="tags" showSearch={{ optionFilterProp: ["label", "value"] }} maxTagCount="responsive" tokenSeparators={[",", "\n"]} options={knownModels.map((model) => ({ label: modelLabel(model, { protocol: channelProtocol, baseUrl: channelBaseUrl }), value: model }))} />
                                         </Form.Item>
                                         <Button onClick={() => openChannelModelSelector()}>选择模型</Button>
                                     </Space.Compact>
@@ -907,77 +867,17 @@ export default function AdminSettingsPage() {
                         </Row>
                     </Form>
                 </Drawer>
-                <Modal
-                    title={
-                        <Space size={12}>
-                            选择渠道模型
-                            <Typography.Text type="secondary">
-                                已选择 {modelSelectSelected.length} / {uniqueModels([...modelSelectSource, ...modelSelectExisting]).length}
-                            </Typography.Text>
-                        </Space>
-                    }
-                    open={isModelSelectorOpen}
-                    width={960}
-                    onCancel={closeChannelModelSelector}
-                    footer={
-                        <Space>
-                            <Button onClick={closeChannelModelSelector}>取消</Button>
-                            <Button type="primary" onClick={confirmChannelModelSelector}>
-                                确定
-                            </Button>
-                        </Space>
-                    }
-                    destroyOnHidden
-                >
-                    <Flex vertical gap={14}>
-                        <Flex gap={12} wrap>
-                            <Input.Search placeholder="搜索模型" allowClear value={modelSelectKeyword} onChange={(event) => setModelSelectKeyword(event.target.value)} style={{ flex: "1 1 260px" }} />
-                            <Space.Compact style={{ flex: "1 1 320px" }}>
-                                <Input value={modelSelectNewModel} placeholder="输入模型名称" onChange={(event) => setModelSelectNewModel(event.target.value)} onPressEnter={addModelInSelector} />
-                                <Button onClick={addModelInSelector}>增加模型</Button>
-                                <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>
-                                    拉取模型列表
-                                </Button>
-                            </Space.Compact>
-                        </Flex>
-                        <Tabs
-                            activeKey={modelSelectTab}
-                            onChange={(key) => setModelSelectTab(key as ModelSelectTabKey)}
-                            items={[
-                                { key: "new", label: `新获取的模型 (${modelSelectGroups.new.length})` },
-                                { key: "current", label: `已有的模型 (${modelSelectGroups.current.length})` },
-                            ]}
-                        />
-                        <Flex justify="space-between" align="center" gap={12} wrap>
-                            <Typography.Text type="secondary">
-                                当前列表已选择 {activeSelectedCount} / {activeModelSelectModels.length}
-                            </Typography.Text>
-                            <Space size={8}>
-                                <Button size="small" disabled={!activeModelSelectModels.length || activeSelectedCount === activeModelSelectModels.length} onClick={selectActiveModels}>
-                                    全选当前列表
-                                </Button>
-                                <Button size="small" disabled={!activeSelectedCount} onClick={clearActiveModels}>
-                                    取消当前列表
-                                </Button>
-                            </Space>
-                        </Flex>
-                        <div style={{ maxHeight: 420, overflowY: "auto", borderTop: "1px solid var(--ant-color-border-secondary)", paddingTop: 12 }}>
-                            {activeModelSelectModels.length ? (
-                                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", columnGap: 24, rowGap: 12 }}>
-                                    {activeModelSelectModels.map((model) => (
-                                        <Checkbox key={model} checked={modelSelectSelected.includes(model)} onChange={(event) => toggleSelectedModel(model, event.target.checked)}>
-                                            <Typography.Text style={{ wordBreak: "break-all" }}>{model}</Typography.Text>
-                                        </Checkbox>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div style={{ padding: "48px 0", textAlign: "center" }}>
-                                    <Typography.Text type="secondary">没有匹配的模型</Typography.Text>
-                                </div>
-                            )}
-                        </div>
-                    </Flex>
-                </Modal>
+                {isModelSelectorOpen ? (
+                    <ChannelModelSelectorModal
+                        channel={channelForm.getFieldsValue()}
+                        models={channelForm.getFieldValue("models") || []}
+                        sourceModels={knownModels}
+                        onCancel={closeChannelModelSelector}
+                        onConfirm={confirmChannelModelSelector}
+                        onFetchModels={fetchChannelModelList}
+                        onModelsFetched={rememberModels}
+                    />
+                ) : null}
                 <Modal
                     title={
                         <Space>
@@ -1010,7 +910,7 @@ export default function AdminSettingsPage() {
                                 onChange: (keys) => setSelectedTestModels(keys.map(String)),
                             }}
                             columns={[
-                                { title: "模型名称", dataIndex: "model", render: (value) => <Typography.Text strong>{value}</Typography.Text> },
+                                { title: "模型名称", dataIndex: "model", render: (value) => <Typography.Text strong title={value}>{modelLabel(value, testChannel)}</Typography.Text> },
                                 {
                                     title: "状态",
                                     dataIndex: "model",
@@ -1034,7 +934,6 @@ export default function AdminSettingsPage() {
                                     title: "操作",
                                     key: "actions",
                                     width: 120,
-                                    align: "right",
                                     render: (_, item) => (
                                         <Button size="small" loading={testingModels.includes(item.model)} onClick={() => void testModelOnline(item.model)}>
                                             测试
@@ -1120,6 +1019,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             mode: setting.storage?.mode || "local_indexeddb",
             allowUserProvider: setting.storage?.allowUserProvider === true,
             allowUserGlobalProvider: setting.storage?.allowUserGlobalProvider === true,
+            autoSyncAllAssets: setting.storage?.autoSyncAllAssets === true,
             providers: (setting.storage?.providers || []).map(normalizeStorageProvider),
             roundRobinCursor: Number(setting.storage?.roundRobinCursor) || 0,
             capacityCheck: {
@@ -1199,16 +1099,6 @@ function collectChannelModels(channels: AdminModelChannel[]) {
 
 function collectKnownModels(settings: AdminSettings) {
     return uniqueModels([...(settings.public.modelChannel.availableModels || []), ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model), ...settings.private.channels.flatMap((channel) => channel.models || [])]);
-}
-
-function buildModelSelectGroups(sourceModels: string[], existingModels: string[]): Record<ModelSelectTabKey, string[]> {
-    const source = uniqueModels(sourceModels);
-    const existing = uniqueModels(existingModels);
-    const existingSet = new Set(existing);
-    return {
-        new: source.filter((model) => !existingSet.has(model)),
-        current: existing,
-    };
 }
 
 function uniqueModels(models: string[]) {

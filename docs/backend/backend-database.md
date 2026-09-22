@@ -23,6 +23,8 @@ description: 当前后端主要数据表与字段说明
 - `auth_bootstraps`
 - `credit_logs`
 - `prompts`
+- `agent_skills`
+- `agent_skill_files`
 - `assets`
 - `settings`
 - `video_tasks`
@@ -49,7 +51,7 @@ description: 当前后端主要数据表与字段说明
 | `display_name` | string | 昵称 |
 | `avatar_url` | string | 头像地址 |
 | `role` | string | 角色：`user`、`admin` |
-| `credits` | number | 算力点余额 |
+| `credits` | decimal(20,2) | 算力点余额 |
 | `aff_code` | string | 用户自己的邀请码，唯一索引 |
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
 | `inviter_id` | string | 邀请人用户 ID |
@@ -105,6 +107,7 @@ S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表
 | `width` | number | 预留字段，当前上传链路未写入，默认 `0` |
 | `height` | number | 预留字段，当前上传链路未写入，默认 `0` |
 | `sha256` | string | 文件内容摘要 |
+| `direct` | boolean | 是否由登录用户的浏览器直接上传至 WebDAV |
 | `created_by` | string | 创建用户 ID |
 | `created_at` | string | 创建时间 |
 | `deleted_at` | string | 预留字段；当前删除链路直接删除索引记录 |
@@ -126,6 +129,43 @@ S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表
 | `updated_at` | string | 更新时间 |
 
 `github_url` 仅用于接口返回，不写入数据库。
+
+### agent_skills
+
+画布 Agent 可选择 Skill 表。系统预设与登录用户上传的 Skill 使用同一张表，通过来源和所有者隔离；未登录用户的 Skill 只保存在浏览器 `localforage`，不写入该表。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `owner_user_id` | string | 用户 Skill 的所有者 ID；系统预设为空 |
+| `source` | string | 来源：`system`、`user` |
+| `name` | string | Skill 名称 |
+| `description` | string | Skill 简介 |
+| `cover_url` | text | Skill 封面图片地址 |
+| `cover_storage_key` | string | 现有图片存储系统中的对象标识；直接填写图片链接时为空 |
+| `content` | text | 完整 Markdown 或文本内容，最多 20000 字 |
+| `enabled` | boolean | 是否启用；停用的系统预设不向画布返回 |
+| `sort` | number | 系统预设排序值 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+用户接口只能读写和删除当前账号自己的 `source=user` 记录；管理员 Skill 页面只维护 `source=system` 记录。Skill 编辑后直接使用最新内容，不保存历史版本。
+
+### agent_skill_files
+
+系统预设 Skill 的附属目录和文本文件表。根 `SKILL.md` 不在本表重复保存，仍以 `agent_skills.content` 为唯一内容来源。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `skill_id` | string | 所属系统 Skill ID，与 `path` 组成联合主键 |
+| `path` | string | Skill 包内安全相对路径 |
+| `kind` | string | `folder` 或 `file` |
+| `content` | text | 文件正文；文件夹为空，每个文件最多 20000 字 |
+| `sort` | number | 同一目录内的显示顺序 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+后台保存系统 Skill 时会在同一数据库事务中替换该 Skill 的附属目录记录；普通用户 Skill 仍然只允许单文件内容，不写入本表。Agent 只在当前激活的系统 Skill 明确引用附属文件时按路径读取，不会把整个目录每轮注入模型上下文。
 
 ### assets
 
@@ -171,7 +211,7 @@ S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表
 | `request_body` | text | 创建任务时的请求摘要 |
 | `response_body` | text | 创建任务时的响应摘要 |
 | `last_response` | text | 最近一次状态响应摘要 |
-| `credits` | number | 创建任务时预扣算力点 |
+| `credits` | decimal(20,2) | 创建任务时预扣算力点 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 | `started_at` | string | 上游开始时间 |
@@ -288,17 +328,18 @@ S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表
 
 ### settings
 
-系统配置表，只保存两行数据：`public` 放前端可读取的公开配置，`private` 放仅后端和管理员可读取的私有配置，配置值都用 JSON。
+系统配置表。`public` 放前端可读取的公开配置，`private` 放仅后端和管理员可读取的私有配置；`agent-skills-initialized` 是默认 Skill 首次初始化标记，避免管理员删除后被启动流程重新创建。配置值都用 JSON。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `key` | string | 主键：`public`、`private` |
+| `key` | string | 主键：`public`、`private`、`agent-skills-initialized` |
 | `value` | json | 配置内容 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
 `public.value` 常放前端展示和可公开读取的配置，例如模型列表、登录开关等。  
 `private.value` 常放渠道密钥、登录密钥、后台内部开关等。
+`private.value.storage.autoSyncAllAssets` 为“全部素材云端同步”开关，默认 `false`，控制前端新增媒体和生成结果的自动转存；使用现有配置 JSON 保存，不增加数据表。
 
 当前系统设置接口会按后端结构体序列化和反序列化已知字段；数据库 JSON 中额外存在的旧字段会被忽略。
 
@@ -327,7 +368,7 @@ S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
-| `credits` | number | 每次后端模型接口调用前预扣的算力点，未配置默认不扣除 |
+| `credits` | number | 图片每张、视频每秒、文本和音频每次调用预扣的算力点，最多保留两位小数；视频智能时长 `-1` 按 15 秒计算，未配置默认不扣除 |
 
 `auth.linuxDo` 当前字段：
 
@@ -347,7 +388,7 @@ S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `protocol` | string | 协议，当前支持 `openai` |
+| `protocol` | string | 协议，支持 OpenAI、Gemini、Grok2API、MiniMax、APIMart、KIE、MiMo |
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |
@@ -381,8 +422,8 @@ S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表
 | `id` | string | 主键 |
 | `user_id` | string | 关联用户 ID |
 | `type` | string | 类型：`admin_adjust`、`ai_consume`、`ai_refund` |
-| `amount` | number | 本次变动数量，增加为正，扣减为负 |
-| `balance` | number | 变动后的用户算力点余额 |
+| `amount` | decimal(20,2) | 本次变动数量，增加为正，扣减为负 |
+| `balance` | decimal(20,2) | 变动后的用户算力点余额 |
 | `related_id` | string | 关联业务 ID，可为空 |
 | `remark` | string | 备注 |
 | `extra` | json | 扩展信息 |

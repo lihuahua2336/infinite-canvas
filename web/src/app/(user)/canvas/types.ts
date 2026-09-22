@@ -59,13 +59,19 @@ export type CanvasNodeMetadata = {
     audioFormat?: string;
     audioSpeed?: string;
     audioInstructions?: string;
+    grokTtsVoice?: string;
+    grokTtsLanguage?: string;
+    grokTtsFormat?: string;
+    grokTtsSpeed?: string;
     glmTtsVoice?: string;
     glmTtsFormat?: string;
     glmTtsSpeed?: string;
     mimoTtsVoice?: string;
     mimoTtsFormat?: string;
     mimoVoiceDesignPrompt?: string;
+    geminiTtsVoice?: string;
     mimoVoiceCloneAudioNodeId?: string;
+    referenceAudioNodeId?: string;
     references?: string[];
     naturalWidth?: number;
     naturalHeight?: number;
@@ -143,6 +149,7 @@ export type CanvasAssistantReference = {
     id: string;
     type: CanvasNodeType;
     title: string;
+    label?: string;
     dataUrl?: string;
     url?: string;
     storageKey?: string;
@@ -165,6 +172,7 @@ export type PendingAgentAsset = {
 export type CanvasPendingAgentRequest = {
     prompt: string;
     assets: PendingAgentAsset[];
+    skills: CanvasAgentSkillSelection[];
 };
 
 export type CanvasAssistantImage = {
@@ -174,6 +182,14 @@ export type CanvasAssistantImage = {
     prompt: string;
     source?: "asset" | "library";
 };
+
+export type CanvasAgentSkillSelection = {
+    id: string;
+    name: string;
+    source: "system" | "user";
+};
+
+export const MAX_CANVAS_AGENT_SKILLS = 5;
 
 export type CanvasAgentPhase =
     | "intake"
@@ -188,6 +204,13 @@ export type CanvasAgentPhase =
     | "complete";
 
 export type CanvasAgentConfig = {
+    mode?: "api" | "codex";
+    codexModel?: string;
+    codexEffort?: string;
+    textApiMode: "chat" | "responses";
+    textStreaming?: boolean;
+    textReasoningEnabled?: boolean;
+    autoGenerateMedia: boolean;
     imageQuality: string;
     imageSize: string;
     videoQuality: string;
@@ -216,11 +239,12 @@ export type CanvasAgentToolCall = {
     id: string;
     name: string;
     arguments: Record<string, unknown>;
+    argumentsError?: string;
 };
 
 export type CanvasAgentProtocolMessage =
     | { role: "user" | "system"; content: CanvasAgentContent }
-    | { role: "assistant"; content?: string; reasoningContent?: string; toolCalls?: CanvasAgentToolCall[] }
+    | { role: "assistant"; content?: string; reasoningContent?: string; responseItems?: unknown[]; toolCalls?: CanvasAgentToolCall[] }
     | { role: "tool"; content: string; toolCallId: string; name: string };
 
 export type CanvasAssistantMessageStatus = "thinking" | "running" | "waiting" | "success" | "error";
@@ -233,14 +257,26 @@ export type CanvasAssistantMessage = {
     activity?: string;
     references?: CanvasAssistantReference[];
     images?: CanvasAssistantImage[];
+    skills?: CanvasAgentSkillSelection[];
+    skillsSelected?: boolean;
 };
 
+export type CanvasAgentJsonFallbackMode = "structured-json" | "prompt-json";
+export type CanvasAgentToolMode = "native" | CanvasAgentJsonFallbackMode;
+
 export type CanvasAssistantSession = {
+    provider?: "api" | "codex";
+    codexThreadId?: string;
+    codexServiceId?: string;
     id: string;
     title: string;
     messages: CanvasAssistantMessage[];
     agentState: CanvasAgentState;
     protocolMessages: CanvasAgentProtocolMessage[];
+    jsonToolFallbackKey?: string;
+    jsonToolFallbackMode?: CanvasAgentJsonFallbackMode;
+    activeSkills?: CanvasAgentSkillSelection[];
+    contextCheckpoint?: string;
     createdAt: string;
     updatedAt: string;
 };

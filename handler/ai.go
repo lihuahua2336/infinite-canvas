@@ -74,11 +74,25 @@ func AIVideo(w http.ResponseWriter, r *http.Request, id string) {
 }
 
 func AIVideoContent(w http.ResponseWriter, r *http.Request, id string) {
+	for _, adapter := range builtinAIProtocols {
+		if adapter.videoContent != nil && adapter.videoContent(w, r, id) {
+			return
+		}
+	}
 	proxyAIGetRequest(w, r, "/videos/"+id+"/content")
 }
 
 func AIAudioSpeech(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/audio/speech")
+}
+
+func AITTSVoices(w http.ResponseWriter, r *http.Request) {
+	modelName := strings.TrimSpace(r.URL.Query().Get("model"))
+	if modelName == "" {
+		Fail(w, "缺少模型名称")
+		return
+	}
+	proxyAIGetRequest(w, r, "/tts/voices?model="+url.QueryEscape(modelName))
 }
 
 func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
@@ -104,7 +118,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	service.SetModelChannelAuthHeader(request, channel)
 	copyAIResponse(w, request, channel, aiLogContext{StartedAt: startedAt, Endpoint: path, Method: http.MethodGet, Model: modelName, Channel: channel, UserID: user.ID, UserDisplayName: firstNonEmpty(user.DisplayName, user.Username), RequestBody: summarizeQueryParams(r.URL.Query())}, nil)
 }
 
@@ -127,7 +141,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		failAIChannelSelect(w, err, "AI 接口请求失败")
 		return
 	}
-	credits := 0
+	credits := 0.0
 	if userChannelID == "" {
 		credits, err = service.ModelCost(modelName)
 		if err != nil {
@@ -135,45 +149,30 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			Fail(w, "AI 接口请求失败")
 			return
 		}
-		credits *= readAIRequestCount(body, contentType)
+		credits *= float64(readAIRequestCount(body, contentType, false))
 	}
 	upstreamPath := resolveAIProxyPath(channel, modelName, path)
-	if service.IsMiMoTTSModelName(modelName) && path == "/audio/speech" {
-		body, contentType, err = normalizeMiMoTTSBody(body, contentType, modelName)
-		if err != nil {
-			log.Printf("AI proxy normalize MiMo TTS request failed: model=%s err=%v", modelName, err)
-			Fail(w, err.Error())
-			return
+	prepared, _, err := prepareAIProtocolRequest(aiProtocolRequest{
+		mode: aiProtocolProxyRequest, body: body, contentType: contentType, modelName: modelName,
+		channel: channel, endpoint: path, path: upstreamPath,
+	})
+	if err != nil {
+		log.Printf("AI proxy normalize %s request failed: model=%s err=%v", prepared.failureLabel, modelName, err)
+		message := "AI 接口请求失败"
+		if prepared.failureLabel == "MiMo TTS" || prepared.failureLabel == "AutoDL" {
+			message = err.Error()
 		}
-	} else if isKIEChannel(channel, modelName) && isKIECreateTaskPath(upstreamPath) {
-		body, contentType, err = normalizeKIEVideoBody(body, contentType, modelName, channel)
-		if err != nil {
-			log.Printf("AI proxy normalize KIE request failed: model=%s err=%v", modelName, err)
-			Fail(w, "AI 接口请求失败")
-			return
-		}
-	} else if isAPIMartChannel(channel, modelName) && upstreamPath == "/videos/generations" {
-		body, contentType, err = normalizeAPIMartVideoBody(body, contentType, modelName, channel)
-		if err != nil {
-			log.Printf("AI proxy normalize APIMart video request failed: model=%s err=%v", modelName, err)
-			Fail(w, "AI 接口请求失败")
-			return
-		}
-	} else if isAPIMartChannel(channel, modelName) && (upstreamPath == "/images/generations" || upstreamPath == "/images/edits") {
-		body, contentType, err = normalizeAPIMartImageBody(body, contentType, modelName, channel)
-		if err != nil {
-			log.Printf("AI proxy normalize APIMart image request failed: model=%s err=%v", modelName, err)
-			Fail(w, "AI 接口请求失败")
-			return
-		}
+		Fail(w, message)
+		return
 	}
+	body, contentType, upstreamPath = prepared.body, prepared.contentType, prepared.path
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, upstreamPath), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, upstreamPath), err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	service.SetModelChannelAuthHeader(request, channel)
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
@@ -196,10 +195,17 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	}, func() {
 		if credits > 0 {
 			if err := service.RefundUserCredits(user.ID, modelName, credits, upstreamPath); err != nil {
-				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
+				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%g err=%v", user.ID, modelName, credits, err)
 			}
 		}
 	})
+}
+
+func geminiStreamRequested(body []byte) bool {
+	var payload struct {
+		Stream *bool `json:"stream"`
+	}
+	return json.Unmarshal(body, &payload) == nil && payload.Stream != nil && *payload.Stream
 }
 
 type aiLogContext struct {
@@ -210,7 +216,7 @@ type aiLogContext struct {
 	Channel         model.ModelChannel
 	UserID          string
 	UserDisplayName string
-	Credits         int
+	Credits         float64
 	RequestBody     string
 }
 
@@ -238,19 +244,8 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, channel model.
 		return
 	}
 
-	if copyMiMoTTSResponse(w, response, logContext, onFailure) {
+	if copyAIProtocolResponse(w, response, request, channel, logContext, onFailure) {
 		return
-	}
-	if copyKIEVideoResponse(w, response, request, channel, logContext, onFailure) {
-		return
-	}
-	if isAPIMartChannel(channel, logContext.Model) {
-		if copyAPIMartImageResponse(w, response, request, channel, logContext, onFailure) {
-			return
-		}
-		if copyAPIMartVideoResponse(w, response, request, channel, logContext) {
-			return
-		}
 	}
 
 	for key, values := range response.Header {
@@ -262,11 +257,11 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, channel model.
 		}
 	}
 	w.WriteHeader(response.StatusCode)
-	responseBody := copyAIResponseBody(w, response.Body)
+	responseBody := copyAIResponseBody(w, response.Body, !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "video/"))
 	saveAIProxyLog(logContext, response.StatusCode, responseBody, "")
 }
 
-func copyAIResponseBody(w http.ResponseWriter, body io.Reader) string {
+func copyAIResponseBody(w http.ResponseWriter, body io.Reader, capture bool) string {
 	flusher, canFlush := w.(http.Flusher)
 	buffer := make([]byte, 32*1024)
 	var logBuffer strings.Builder
@@ -276,7 +271,7 @@ func copyAIResponseBody(w http.ResponseWriter, body io.Reader) string {
 			if _, writeErr := w.Write(buffer[:n]); writeErr != nil {
 				return logBuffer.String()
 			}
-			if logBuffer.Len() < 64*1024 {
+			if capture && logBuffer.Len() < 64*1024 {
 				_, _ = logBuffer.Write(buffer[:min(n, 64*1024-logBuffer.Len())])
 			}
 			if canFlush {
@@ -292,6 +287,13 @@ func copyAIResponseBody(w http.ResponseWriter, body io.Reader) string {
 func saveAIProxyLog(context aiLogContext, status int, responseBody string, errorMessage string) {
 	if context.StartedAt.IsZero() {
 		context.StartedAt = time.Now()
+	}
+	if service.IsGeminiChannel(context.Channel) {
+		if context.Endpoint == "/images/generations" || context.Endpoint == "/images/edits" || context.Endpoint == "/audio/speech" {
+			responseBody = "[redacted Gemini media response]"
+		} else if strings.TrimSpace(responseBody) != "" {
+			responseBody = summarizeAIRequest([]byte(responseBody), "application/json")
+		}
 	}
 	service.SaveAICallLog(service.AICallLogInput{
 		UserID:          context.UserID,
@@ -392,7 +394,7 @@ func redactLargeImages(value *any) {
 	switch typed := (*value).(type) {
 	case map[string]any:
 		for key, item := range typed {
-			if text, ok := item.(string); ok && (strings.HasPrefix(text, "data:image/") || strings.HasPrefix(text, "data:audio/") || len(text) > 2048 && looksLikeBase64(text)) {
+			if text, ok := item.(string); ok && (strings.HasPrefix(text, "data:image/") || strings.HasPrefix(text, "data:video/") || strings.HasPrefix(text, "data:audio/") || len(text) > 2048 && looksLikeBase64(text)) {
 				typed[key] = fmt.Sprintf("[redacted media/string len=%d]", len(text))
 				continue
 			}
@@ -455,8 +457,9 @@ func readMultipartModel(body []byte, contentType string) string {
 	return ""
 }
 
-func readAIRequestCount(body []byte, contentType string) int {
+func readAIRequestCount(body []byte, contentType string, video bool) int {
 	count := 1
+	var videoPayload map[string]any
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		_, params, err := mime.ParseMediaType(contentType)
 		if err != nil {
@@ -467,8 +470,26 @@ func readAIRequestCount(body []byte, contentType string) int {
 			return count
 		}
 		defer form.RemoveAll()
-		if values := form.Value["n"]; len(values) > 0 {
+		if video {
+			count = 0
+			for _, field := range []string{"seconds", "duration"} {
+				if values := form.Value[field]; len(values) > 0 {
+					if _, err := fmt.Sscan(values[0], &count); err == nil && count != 0 {
+						break
+					}
+				}
+			}
+		} else if values := form.Value["n"]; len(values) > 0 {
 			_, _ = fmt.Sscan(values[0], &count)
+		}
+	} else if video {
+		count = 0
+		if json.Unmarshal(body, &videoPayload) == nil {
+			for _, field := range []string{"seconds", "duration", "parameters.durationSeconds"} {
+				if _, err := fmt.Sscan(readStringPath(videoPayload, field), &count); err == nil && count != 0 {
+					break
+				}
+			}
 		}
 	} else {
 		var payload struct {
@@ -477,6 +498,16 @@ func readAIRequestCount(body []byte, contentType string) int {
 		_ = json.Unmarshal(body, &payload)
 		count = payload.N
 	}
+	if video && count == -1 {
+		return 15
+	}
+	if video && count < 1 {
+		frames := readIntPath(videoPayload, "num_frames")
+		frameRate := readIntPath(videoPayload, "frame_rate")
+		if frames > 1 && frameRate > 0 {
+			count = (frames - 1 + frameRate - 1) / frameRate
+		}
+	}
 	if count < 1 {
 		return 1
 	}
@@ -484,15 +515,12 @@ func readAIRequestCount(body []byte, contentType string) int {
 }
 
 func resolveAIProxyURL(channel model.ModelChannel, modelName string, path string) string {
-	if videoID, ok := agnesVideoQueryID(modelName, path); ok {
-		baseURL := strings.TrimRight(strings.TrimSpace(channel.BaseURL), "/")
-		if strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
-			baseURL = strings.TrimRight(baseURL[:len(baseURL)-len("/v1")], "/")
+	for _, adapter := range builtinAIProtocols {
+		if adapter.url != nil {
+			if resolved, ok := adapter.url(channel, modelName, path); ok {
+				return resolved
+			}
 		}
-		values := url.Values{}
-		values.Set("video_id", videoID)
-		values.Set("model_name", modelName)
-		return baseURL + "/agnesapi?" + values.Encode()
 	}
 	return service.BuildModelChannelURL(channel, path)
 }
@@ -509,64 +537,11 @@ func agnesVideoQueryID(modelName string, path string) (string, bool) {
 }
 
 func resolveAIProxyPath(channel model.ModelChannel, modelName string, path string) string {
-	if service.IsMiMoTTSModelName(modelName) && path == "/audio/speech" {
-		return "/chat/completions"
-	}
-	if isCogVideoX3Model(modelName) {
-		if path == "/videos" {
-			return "/videos/generations"
-		}
-		if strings.HasPrefix(path, "/videos/") && !strings.HasSuffix(path, "/content") {
-			taskID := strings.TrimSpace(strings.TrimPrefix(path, "/videos/"))
-			if taskID != "" && !strings.Contains(taskID, "/") {
-				return "/async-result/" + url.PathEscape(taskID)
+	for _, adapter := range builtinAIProtocols {
+		if adapter.path != nil {
+			if resolved, ok := adapter.path(channel, modelName, path); ok {
+				return resolved
 			}
-		}
-		return path
-	}
-	if isKIEChannel(channel, modelName) {
-		if path == "/images/generations" && strings.EqualFold(strings.TrimSpace(modelName), "grok-imagine-image-2-0/text-to-image") {
-			return "/client/tasks"
-		}
-		if path == "/videos" || path == "/images/generations" || path == "/images/edits" {
-			return "/jobs/createTask"
-		}
-		if strings.HasPrefix(path, "/videos/") && !strings.HasSuffix(path, "/content") {
-			taskID := strings.TrimSpace(strings.TrimPrefix(path, "/videos/"))
-			if taskID != "" && !strings.Contains(taskID, "/") {
-				return "/jobs/recordInfo?taskId=" + url.QueryEscape(taskID)
-			}
-		}
-		return path
-	}
-	if isAPIMartChannel(channel, modelName) {
-		if path == "/videos" {
-			return "/videos/generations"
-		}
-		if path == "/images/edits" {
-			model := normalizeAPIMartModelName(modelName)
-			if strings.Contains(model, "grok-imagine") && strings.Contains(model, "edit") {
-				return path
-			}
-			return "/images/generations"
-		}
-		if strings.HasPrefix(path, "/videos/") && !strings.HasSuffix(path, "/content") {
-			taskID := strings.TrimSpace(strings.TrimPrefix(path, "/videos/"))
-			if taskID != "" && !strings.Contains(taskID, "/") {
-				return "/tasks/" + url.PathEscape(taskID) + "?language=zh"
-			}
-		}
-		return path
-	}
-	if strings.EqualFold(strings.TrimSpace(modelName), "grok-imagine-video") && path == "/videos" {
-		return "/videos/generations"
-	}
-	if isArkSeedanceVideo(channel.BaseURL, modelName) {
-		if path == "/videos" {
-			return "/contents/generations/tasks"
-		}
-		if strings.HasPrefix(path, "/videos/") && !strings.HasSuffix(path, "/content") {
-			return "/contents/generations/tasks/" + strings.TrimPrefix(path, "/videos/")
 		}
 	}
 	return path
@@ -574,12 +549,6 @@ func resolveAIProxyPath(channel model.ModelChannel, modelName string, path strin
 
 func isCogVideoX3Model(modelName string) bool {
 	return strings.EqualFold(strings.TrimSpace(modelName), "cogvideox-3")
-}
-
-func isArkSeedanceVideo(baseURL string, modelName string) bool {
-	base := strings.ToLower(baseURL)
-	model := strings.ToLower(modelName)
-	return strings.Contains(model, "seedance") || strings.Contains(model, "doubao-seedance") || strings.Contains(base, "/api/plan/v3")
 }
 
 func isAgnesVideoModel(modelName string) bool {

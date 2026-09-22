@@ -69,6 +69,8 @@ func DB() (*gorm.DB, error) {
 			&model.AuthBootstrap{},
 			&model.CreditLog{},
 			&model.Prompt{},
+			&model.AgentSkill{},
+			&model.AgentSkillFile{},
 			&model.Asset{},
 			&model.Setting{},
 			&model.CreativeWorkflow{},
