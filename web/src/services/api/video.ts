@@ -347,6 +347,8 @@ async function createVideoRequestBody(config: AiConfig, model: string, prompt: s
     if (isMiniMaxH3Config(config, model)) return createMiniMaxH3VideoRequestBody(config, model, prompt, input);
     if (isCogVideoX3Model(model)) return createCogVideoX3RequestBody(config, model, prompt, input);
     if (isAgnesVideoV25Model(model)) return createAgnesVideoV25RequestBody(config, model, prompt, input);
+    const documentAdapter = localDocumentVideoAdapter(config, model);
+    if (documentAdapter) return documentAdapter.build(config, model, prompt, input);
     if (isAgnesVideoModel(model)) {
         const references = input.references;
         const inputReferences = await Promise.all(references.slice(0, 7).map(imageToAgnesReference));
@@ -494,6 +496,152 @@ async function miniMaxReferenceValue(value: Promise<string | File>) {
     return typeof reference === "string" ? reference : readFileAsDataUrl(reference);
 }
 
+type DocumentVideoAdapter = {
+    matches: (model: string) => boolean;
+    build: (config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) => Promise<Record<string, unknown>>;
+};
+
+const DOCUMENT_VIDEO_ADAPTERS: DocumentVideoAdapter[] = [
+    { matches: (model) => modelKey(model) === "veo-omni-flash", build: createNewtokenVeoOmniFlashBody },
+    { matches: (model) => modelKey(model) === "veo-omni-flash-video-edit", build: createNewtokenVeoOmniFlashVideoEditBody },
+    { matches: (model) => modelKey(model) === "veo-3-1", build: createNewtokenVeo31Body },
+    { matches: isNewtokenSeedanceOfficialModel, build: createNewtokenSeedanceOfficialBody },
+    { matches: isNewtokenSeedanceThirdPartyModel, build: createNewtokenSeedanceThirdPartyBody },
+];
+
+function localDocumentVideoAdapter(config: AiConfig, model: string) {
+    if (config.channelMode !== "local") return null;
+    return DOCUMENT_VIDEO_ADAPTERS.find((adapter) => adapter.matches(model)) || null;
+}
+
+async function createNewtokenVeoOmniFlashBody(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
+    const images = await Promise.all(input.references.slice(0, 6).map(imageToDataUrl));
+    return {
+        model,
+        prompt,
+        duration: 10,
+        aspect_ratio: documentVideoAspectRatio(config.size),
+        ...(images.length ? { Ingredients_images: images } : {}),
+    };
+}
+
+async function createNewtokenVeoOmniFlashVideoEditBody(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
+    const [video] = await Promise.all(input.videoReferences.slice(0, 1).map(mediaReferenceToFormValue));
+    if (!video) throw new VideoRequestError("VEO Omni Flash Video Edit 至少需要 1 个参考视频");
+    const images = await Promise.all(input.references.map(imageToDataUrl));
+    return {
+        model,
+        prompt,
+        duration: 10,
+        aspect_ratio: documentVideoAspectRatio(config.size),
+        video_url: video,
+        ...(images.length ? { Ingredients_images: images } : {}),
+    };
+}
+
+async function createNewtokenVeo31Body(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
+    const frames = [input.firstFrame, input.lastFrame].filter((image): image is ReferenceImage => Boolean(image));
+    const references = frames.length ? frames.slice(0, 2) : input.references.slice(0, 8);
+    const images = await Promise.all(references.map(imageToDataUrl));
+    const body: Record<string, unknown> = {
+        model,
+        prompt,
+        duration: 8,
+        aspect_ratio: documentVideoAspectRatio(config.size),
+    };
+    if (images.length <= 2) {
+        if (images.length) body.images = images;
+    } else {
+        body.Ingredients_images = images;
+    }
+    return body;
+}
+
+const NEWTOKEN_SEEDANCE_OFFICIAL_MODELS = new Set([
+    "sd2-0-720p-official",
+    "sd2-0-720p-fast-official",
+    "sd2-5-720p-official",
+    "sd2-0-1080p-official",
+    "sd2-5-1080p-official",
+    "video-ultra-720p",
+    "video-ultra-720p-fast",
+]);
+
+const NEWTOKEN_SEEDANCE_THIRD_PARTY_MODELS = new Set([
+    "sd2-0-1080p",
+    "sd2-0-480p",
+    "sd2-0-720p",
+    "sd2-0-720p-cheap",
+    "sd2-0-fast-480p",
+    "sd2-0-fast-720p",
+    "sd2-5-720p-standard",
+    "video-fast-480p",
+    "video-fast-720p",
+    "video-pro-720p",
+]);
+
+function isNewtokenSeedanceOfficialModel(model: string) {
+    return NEWTOKEN_SEEDANCE_OFFICIAL_MODELS.has(modelKey(model));
+}
+
+function isNewtokenSeedanceThirdPartyModel(model: string) {
+    return NEWTOKEN_SEEDANCE_THIRD_PARTY_MODELS.has(modelKey(model));
+}
+
+async function createNewtokenSeedanceOfficialBody(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
+    const frameImages = [input.firstFrame, input.lastFrame].filter((image): image is ReferenceImage => Boolean(image));
+    const references = await Promise.all(input.references.slice(0, frameImages.length ? Math.max(0, 2 - frameImages.length) : 9).map(imageToDataUrl));
+    const frames = await Promise.all([input.firstFrame, input.lastFrame].map((image) => image ? imageToDataUrl(image) : null));
+    const supportsVideo = !modelKey(model).startsWith("video-ultra-");
+    const videos = supportsVideo && !frameImages.length ? await Promise.all(input.videoReferences.slice(0, modelKey(model).startsWith("sd2-5-") ? 10 : 3).map(mediaReferenceToFormValue)) : [];
+    const audios = await Promise.all(input.audioReferences.slice(0, 3).map(mediaReferenceToFormValue));
+    return {
+        model,
+        prompt,
+        duration: clampDocumentDuration(config.videoSeconds, 4, modelKey(model).startsWith("sd2-5-") ? 30 : 15),
+        resolution: modelKey(model).includes("1080p") ? "1080p" : "720p",
+        aspect_ratio: documentSeedanceAspectRatio(config.size),
+        ...(references.length ? { extra_images: references } : {}),
+        ...(frames[0] ? { first_frame: frames[0] } : {}),
+        ...(frames[1] ? { last_frame: frames[1] } : {}),
+        ...(videos.length ? { extra_videos: videos } : {}),
+        ...(audios.length ? { extra_audios: audios } : {}),
+    };
+}
+
+async function createNewtokenSeedanceThirdPartyBody(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
+    const images = await Promise.all(input.references.slice(0, 9).map(imageToDataUrl));
+    const videos = await Promise.all(input.videoReferences.slice(0, 3).map(mediaReferenceToFormValue));
+    const audios = await Promise.all(input.audioReferences.slice(0, 3).map(mediaReferenceToFormValue));
+    return {
+        model,
+        prompt,
+        duration: clampDocumentDuration(config.videoSeconds, 4, 15),
+        aspect_ratio: documentSeedanceAspectRatio(config.size),
+        ...(images.length ? { extra_images: images } : {}),
+        ...(videos.length ? { extra_videos: videos } : {}),
+        ...(audios.length ? { extra_audios: audios } : {}),
+    };
+}
+
+function clampDocumentDuration(value: string, min: number, max: number) {
+    return Math.max(min, Math.min(max, Math.floor(Number(value) || 6)));
+}
+
+function documentSeedanceAspectRatio(value: string) {
+    const ratio = normalizeSeedanceRatio(value);
+    return ratio === "adaptive" ? "16:9" : ratio;
+}
+
+function documentVideoAspectRatio(value: string) {
+    const normalized = value.trim();
+    if (["9:16", "2:3", "3:4"].includes(normalized)) return "9:16";
+    if (/^\d+x\d+$/.test(normalized)) {
+        const [width, height] = normalized.split("x").map(Number);
+        if (height > width) return "9:16";
+    }
+    return "16:9";
+}
 async function createCogVideoX3RequestBody(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
     if (input.videoReferences.length || input.audioReferences.length) throw new VideoRequestError("CogVideoX-3 不支持参考视频或参考音频");
     const frames = [input.firstFrame, input.lastFrame].filter((frame): frame is ReferenceImage => Boolean(frame));
