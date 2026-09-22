@@ -12,17 +12,17 @@ export class NewAPIConfigError extends Error {
 export async function fetchNewAPIConfigWithToken(accessToken: string): Promise<NewAPIConfigResponse> {
     const result: NewAPIConfigResponse = { configured: false, displayName: newApiDisplayName, loginUrl: setupUrl(), message: "", models: [], tokens: [] };
     if (!newApiBaseUrl) throw new NewAPIConfigError(`未配置 ${newApiDisplayName} 地址`, 503);
-    const [models, rawTokens] = await Promise.all([
-        get<string[]>(accessToken, "/api/ecosystem/models"),
-        get<Array<{ token_id?: number; token_name?: string; api_key?: string; base_url?: string; group?: string }>>(accessToken, "/api/ecosystem/tokens"),
+    const [rawModels, rawKeys] = await Promise.all([
+        get<Array<{ model?: string }>>(accessToken, "/api/v1/ecosystem/models"),
+        get<{ items?: Array<{ id?: number; name?: string; key?: string; group_id?: number }> }>(accessToken, "/api/v1/ecosystem/keys"),
     ]);
-    result.models = Array.from(new Set((models || []).map((item) => item.trim()).filter(Boolean))).sort();
-    result.tokens = (rawTokens || []).filter((item) => item.api_key?.trim()).map((item, index) => ({
-        tokenId: Number(item.token_id) || index + 1,
-        tokenName: item.token_name?.trim() || `令牌 ${Number(item.token_id) || index + 1}`,
-        baseUrl: (item.base_url || newApiPublicUrl || newApiBaseUrl).replace(/\/+$/, ""),
-        apiKey: item.api_key!.trim(),
-        group: item.group?.trim() || "",
+    result.models = Array.from(new Set((rawModels || []).map((item) => item.model?.trim()).filter((item): item is string => Boolean(item)))).sort();
+    result.tokens = (rawKeys?.items || []).filter((item) => item.key?.trim()).map((item, index) => ({
+        tokenId: Number(item.id) || index + 1,
+        tokenName: item.name?.trim() || `令牌 ${Number(item.id) || index + 1}`,
+        baseUrl: (newApiPublicUrl || newApiBaseUrl).replace(/\/+$/, ""),
+        apiKey: item.key!.trim(),
+        group: item.group_id ? String(item.group_id) : "",
     }));
     result.configured = result.models.length > 0 && result.tokens.length > 0;
     result.message = result.configured ? `${newApiDisplayName} 已连接` : `${newApiDisplayName} 当前没有可用模型或令牌`;
