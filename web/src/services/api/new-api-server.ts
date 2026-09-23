@@ -12,19 +12,22 @@ export class NewAPIConfigError extends Error {
 export async function fetchNewAPIConfigWithToken(accessToken: string): Promise<NewAPIConfigResponse> {
     const result: NewAPIConfigResponse = { configured: false, displayName: newApiDisplayName, loginUrl: setupUrl(), message: "", models: [], tokens: [] };
     if (!newApiBaseUrl) throw new NewAPIConfigError(`未配置 ${newApiDisplayName} 地址`, 503);
-    const [rawModels, rawKeys] = await Promise.all([
-        get<Array<{ model?: string }>>(accessToken, "/api/v1/ecosystem/models"),
-        get<{ items?: Array<{ id?: number; name?: string; key?: string; group_id?: number }> }>(accessToken, "/api/v1/ecosystem/keys"),
-    ]);
-    result.models = Array.from(new Set((rawModels || []).map((item) => item.model?.trim()).filter((item): item is string => Boolean(item)))).sort();
-    result.tokens = (rawKeys?.items || []).filter((item) => item.key?.trim()).map((item, index) => ({
-        tokenId: Number(item.id) || index + 1,
-        tokenName: item.name?.trim() || `令牌 ${Number(item.id) || index + 1}`,
-        baseUrl: (newApiPublicUrl || newApiBaseUrl).replace(/\/+$/, ""),
-        apiKey: item.key!.trim(),
-        group: item.group_id ? String(item.group_id) : "",
-    }));
-    result.configured = result.models.length > 0 && result.tokens.length > 0;
+    const rawTokens = await get<Array<{ token_id: number; token_name: string; api_key: string; base_url: string; group: string }>>(accessToken, "/api/ecosystem/tokens");
+    const firstByGroup = new Map<string, (typeof rawTokens)[number]>();
+    for (const token of rawTokens || []) {
+        const group = token.group?.trim() || newApiDisplayName;
+        if (token.api_key?.trim() && !firstByGroup.has(group)) firstByGroup.set(group, token);
+    }
+    result.tokens = (await Promise.all(Array.from(firstByGroup, async ([group, token]) => {
+        const baseUrl = (token.base_url?.trim() || `${newApiPublicUrl || newApiBaseUrl}/v1`).replace(/\/+$/, "");
+        const response = await fetch(`${newApiBaseUrl}/v1/models`, { headers: { Authorization: `Bearer ${token.api_key}` }, cache: "no-store" });
+        const payload = (await response.json().catch(() => ({}))) as { data?: Array<{ id?: string }>; message?: string };
+        if (!response.ok || !Array.isArray(payload.data)) throw new NewAPIConfigError(payload.message || `${group} 模型列表获取失败`, response.status || 502);
+        const models = Array.from(new Set(payload.data.map((item) => item.id?.trim()).filter((item): item is string => Boolean(item)))).sort();
+        return { tokenId: token.token_id, tokenName: token.token_name, baseUrl, apiKey: token.api_key.trim(), group, models };
+    }))).filter((token) => token.models.length > 0);
+    result.models = Array.from(new Set(result.tokens.flatMap((token) => token.models))).sort();
+    result.configured = result.tokens.length > 0;
     result.message = result.configured ? `${newApiDisplayName} 已连接` : `${newApiDisplayName} 当前没有可用模型或令牌`;
     return result;
 }

@@ -1,4 +1,4 @@
-export type NewAPIToken = { tokenId: number; tokenName: string; baseUrl: string; apiKey: string; group: string };
+export type NewAPIToken = { tokenId: number; tokenName: string; baseUrl: string; apiKey: string; group: string; models: string[] };
 export type NewAPIConfigResponse = { configured: boolean; displayName: string; loginUrl: string; message: string; models: string[]; tokens: NewAPIToken[] };
 
 export async function fetchNewAPIConfig(): Promise<NewAPIConfigResponse> {

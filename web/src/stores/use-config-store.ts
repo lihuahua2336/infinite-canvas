@@ -520,39 +520,53 @@ export function newAPIChannelId(tokenId: string | number) {
 }
 
 export function applyNewAPITokenAsChannel(config: AiConfig, next: NewAPIConfigResponse, tokenId?: string): AiConfig {
-    const token = next.tokens.find((item) => String(item.tokenId) === tokenId) || next.tokens[0];
-    if (!token) return config;
-    const channel = {
-        id: newAPIChannelId(token.tokenId),
-        protocol: "openai" as const,
-        name: token.group || next.displayName,
-        baseUrl: token.baseUrl,
-        apiKey: token.apiKey,
-        models: next.models,
-    };
-    const channels = [...normalizeLocalChannels(config).filter((item) => !item.id.startsWith(NEW_API_CHANNEL_ID_PREFIX)), channel];
+    const tokens = tokenId ? next.tokens.filter((item) => String(item.tokenId) === tokenId) : next.tokens;
+    if (!tokens.length) return config;
+    const channels = normalizeLocalChannels(config);
+    const hadConfiguredChannel = channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
+    for (const token of tokens) {
+        const name = token.group || next.displayName;
+        const index = channels.findIndex((channel) => channel.name === name || channel.id === newAPIChannelId(token.tokenId));
+        const existing = channels[index];
+        if (existing?.baseUrl.trim() && existing.apiKey.trim() && existing.models.length) continue;
+        const channel: LocalModelChannel = {
+            id: existing?.id || newAPIChannelId(token.tokenId),
+            protocol: "openai",
+            name,
+            baseUrl: token.baseUrl,
+            apiKey: token.apiKey,
+            models: token.models,
+        };
+        if (index < 0) channels.push(channel);
+        else channels[index] = channel;
+    }
     const models = normalizeModelList(channels.flatMap((item) => item.models));
+    const firstChannel = channels.find((channel) => channel.id.startsWith(NEW_API_CHANNEL_ID_PREFIX)) || channels[0];
+    const imageModels = filterChannelModelsByCapability(channels, "image");
+    const videoModels = filterChannelModelsByCapability(channels, "video");
+    const textModels = filterChannelModelsByCapability(channels, "text");
+    const audioModels = filterChannelModelsByCapability(channels, "audio");
     return {
         ...config,
-        channelMode: "local",
+        channelMode: hadConfiguredChannel ? config.channelMode : "local",
         localChannels: channels,
-        baseUrl: channel.baseUrl,
-        apiKey: channel.apiKey,
+        baseUrl: hadConfiguredChannel ? config.baseUrl : firstChannel.baseUrl,
+        apiKey: hadConfiguredChannel ? config.apiKey : firstChannel.apiKey,
         models,
-        imageModels: filterModelsByCapability(models, "image"),
-        videoModels: filterModelsByCapability(models, "video"),
-        textModels: filterModelsByCapability(models, "text"),
-        audioModels: filterModelsByCapability(models, "audio"),
-        activeChannelId: channel.id,
-        imageChannelId: channel.id,
-        videoChannelId: channel.id,
-        textChannelId: channel.id,
-        audioChannelId: channel.id,
-        model: next.models[0] || config.model,
-        imageModel: filterModelsByCapability(next.models, "image")[0] || config.imageModel,
-        videoModel: filterModelsByCapability(next.models, "video")[0] || config.videoModel,
-        textModel: filterModelsByCapability(next.models, "text")[0] || config.textModel,
-        audioModel: filterModelsByCapability(next.models, "audio")[0] || config.audioModel,
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+        activeChannelId: hadConfiguredChannel ? config.activeChannelId : firstChannel.id,
+        imageChannelId: hadConfiguredChannel ? config.imageChannelId : channels.find((channel) => channel.models.some((model) => imageModels.includes(model)))?.id || firstChannel.id,
+        videoChannelId: hadConfiguredChannel ? config.videoChannelId : channels.find((channel) => channel.models.some((model) => videoModels.includes(model)))?.id || firstChannel.id,
+        textChannelId: hadConfiguredChannel ? config.textChannelId : channels.find((channel) => channel.models.some((model) => textModels.includes(model)))?.id || firstChannel.id,
+        audioChannelId: hadConfiguredChannel ? config.audioChannelId : channels.find((channel) => channel.models.some((model) => audioModels.includes(model)))?.id || firstChannel.id,
+        model: hadConfiguredChannel ? config.model : firstChannel.models[0] || config.model,
+        imageModel: hadConfiguredChannel ? config.imageModel : imageModels[0] || config.imageModel,
+        videoModel: hadConfiguredChannel ? config.videoModel : videoModels[0] || config.videoModel,
+        textModel: hadConfiguredChannel ? config.textModel : textModels[0] || config.textModel,
+        audioModel: hadConfiguredChannel ? config.audioModel : audioModels[0] || config.audioModel,
     };
 }
 

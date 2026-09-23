@@ -16,9 +16,10 @@ description: 当前版本已实现但仍需人工验证的变更项
 - EggAI Logto 登录、退出登录及登录后 New API 渠道自动配置流程
 - 匿名访问主页、画布和创作页面，发起聊天或生图时才进入 EggAI 授权流程
 - 退出 EggAI 后返回匿名主页，不再自动重新登录
-- 同一会话不重复获取 EggAI 渠道，刷新后重新同步首个令牌和模型列表
+- 同一会话不重复获取 EggAI 渠道，刷新后按分组同步各组首个令牌及专属模型列表，保留已配置完整的渠道
 - Logto 官方 Next.js App Router 服务端登录、HttpOnly Cookie 会话和退出登录流程
-- Next.js 服务端使用 EggAI access token 获取 New API models/tokens，不再依赖浏览器 CORS
+- Next.js 服务端使用 EggAI access token 获取 New API tokens，再用各组令牌获取模型，不依赖浏览器 CORS
+- 版本弹窗从本项目主分支读取最新版本和更新日志；远端版本较旧时不显示低于当前版本的版本号
 - 浏览器直连及后端任务生图完成后自动保存图片 Blob，刷新页面后工作台历史、工作流结果和画布图片仍可查看
 - 工作流创建 Agent 在 EggAI 按需登录后使用当前文本模型和 EggAI 本地渠道直接生成草稿，不再要求旧项目账号登录
 - 视频生成完成后自动保存视频 Blob，刷新页面后历史视频仍可播放

@@ -3,8 +3,8 @@ import { App } from "antd";
 import { APP_VERSION } from "@/constant/env";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
-const latestVersionUrl = "https://raw.githubusercontent.com/tigerowo/infinite-canvas/main/VERSION";
-const latestChangelogUrl = "https://raw.githubusercontent.com/tigerowo/infinite-canvas/main/CHANGELOG.md";
+const latestVersionUrl = "https://raw.githubusercontent.com/lihuahua2336/infinite-canvas/main/VERSION";
+const latestChangelogUrl = "https://raw.githubusercontent.com/lihuahua2336/infinite-canvas/main/CHANGELOG.md";
 
 function readLocalReleases(): ReleaseInfo[] {
     try {
@@ -41,7 +41,8 @@ export function useVersionCheck() {
             const response = await fetch(latestVersionUrl);
             if (!response.ok) return false;
             const version = await response.text();
-            setLatestVersion(version.trim() || currentVersion);
+            const remoteVersion = version.trim();
+            setLatestVersion(remoteVersion && !isNewerVersion(currentVersion, remoteVersion) ? remoteVersion : currentVersion);
             return true;
         } catch {
             return false;
@@ -56,7 +57,8 @@ export function useVersionCheck() {
                 if (!versionResponse.ok) throw new Error("版本读取失败");
                 if (!changelogResponse.ok) throw new Error("更新日志读取失败");
                 const [version, changelog] = await Promise.all([versionResponse.text(), changelogResponse.text()]);
-                setLatestVersion(version.trim() || currentVersion);
+                const remoteVersion = version.trim();
+                setLatestVersion(remoteVersion && !isNewerVersion(currentVersion, remoteVersion) ? remoteVersion : currentVersion);
                 if (changelog.trim()) setReleases(parseChangelog(changelog));
                 if (showMessage) message.success("已获取最新版本信息");
                 return true;

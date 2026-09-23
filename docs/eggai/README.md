@@ -9,7 +9,7 @@ description: 使用 Logto 为无限画布接入 EggAI 登录，并自动配置 N
 
 ## 工作方式
 
-Next.js 服务端通过 Logto 官方 `@logto/next` SDK 完成 OIDC 登录，并把登录状态和 token 保存在加密的 HttpOnly Cookie 中。登录成功后，服务端会按 Logto `sub` 创建或更新本地账户，并签发本项目 JWT，用于角色、算力点和业务数据归属；本项目服务端同时使用 resource access token 请求 New API 的生态接口，浏览器只接收模型和令牌配置并保存首个渠道。
+Next.js 服务端通过 Logto 官方 `@logto/next` SDK 完成 OIDC 登录，并把登录状态和 token 保存在加密的 HttpOnly Cookie 中。登录成功后，服务端会按 Logto `sub` 创建或更新本地账户，并签发本项目 JWT，用于角色、算力点和业务数据归属；本项目服务端同时使用 resource access token 请求 New API 的生态接口，浏览器接收各分组的模型和令牌配置并保存为本地渠道。
 
 用户和管理员统一从 Logto 登录。尚未认领初始 Logto 管理员的部署中，第一个完成 Logto 登录并创建本地账户的用户自动成为管理员，后续用户默认为普通用户，只有管理员在用户管理中调整角色后才能访问 `/admin`。`ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 仅保留为 Logto 不可用时的应急恢复入口，不是正常登录方式。新实例应先由可信人员完成首次登录，再开放公网访问。
 
@@ -64,12 +64,12 @@ NEW_API_DISPLAY_NAME=EggAI
 
 New API 需要允许该 Logto 应用请求对应 audience 和 scope，并且用户已有可用模型和生态令牌。Next.js 服务端会读取：
 
-- `/api/ecosystem/models`
 - `/api/ecosystem/tokens`
+- 使用各分组首个令牌请求 `/v1/models`
 
-系统固定选取返回列表中的第一个令牌，并使用令牌的 EggAI 分组名作为本地渠道名称。如果没有可用模型或令牌，登录会停留在授权提示页，并显示 New API 返回的错误信息。
+系统将令牌的 `group` 视为平台，每个分组按返回顺序取第一把令牌，并将其专属模型列表配置到对应的本地渠道。已有同名且 Base URL、API Key、模型完整的渠道不会被默认值覆盖。如果没有可用模型或令牌，登录会停留在授权提示页，并显示 New API 返回的错误信息。
 
-同一页面运行期间已有 EggAI 本地渠道时不会重复请求。浏览器刷新后会重新获取首个令牌和模型列表，并更新已有 EggAI 渠道。
+同一页面运行期间已有 EggAI 本地渠道时不会重复请求。浏览器刷新后会重新获取各分组首个令牌及其模型列表，补充缺失或未配置完整的渠道。
 
 ## 部署步骤
 
